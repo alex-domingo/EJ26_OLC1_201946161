@@ -1,14 +1,14 @@
 package olc1.golite.visitor.interpreter.value;
 
-public record StringValue(String value, int line, int column) implements ValueWrapper {
+public record RuneValue(int value, int line, int column) implements ValueWrapper {
 
     @Override
     public String getTypeName() {
-        return "string";
+        return "rune";
     }
 
     @Override
     public String toString() {
-        return value;
+        return String.valueOf((char) value);
     }
 }

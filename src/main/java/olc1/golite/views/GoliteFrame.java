@@ -11,6 +11,7 @@ import olc1.golite.Lexer;
 import olc1.golite.parser;
 import olc1.golite.ast.ASTNode;
 import olc1.golite.reports.GoliteError;
+import olc1.golite.reports.SemanticException;
 import olc1.golite.visitor.interpreter.InterpreterVisitor;
 
 public class GoliteFrame extends JFrame {
@@ -80,6 +81,8 @@ public class GoliteFrame extends JFrame {
             InterpreterVisitor interpreter = new InterpreterVisitor();
             interpreter.Visit(ast);
             consoleTextArea.append(interpreter.output);
+        } catch (SemanticException se) {
+            consoleTextArea.append(se.getError().toString() + "\n");
         } catch (Exception e) {
             consoleTextArea.append("Error: " + e.getMessage() + "\n");
         }
