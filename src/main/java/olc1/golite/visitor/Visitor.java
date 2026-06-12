@@ -31,6 +31,8 @@ public interface Visitor<T> {
 
     T visit(Assign.Context ctx);
 
+    T visit(VarDecl.Context ctx);
+
     T visit(IfNode.Context ctx);
 
     T visit(Statments.Context ctx);

@@ -68,12 +68,19 @@ str_lex = ({normal_char} | {escape_char})*
 "{"     { return new Symbol(sym.lbrace, yyline, yycolumn, yytext()); }
 "}"     { return new Symbol(sym.rbrace, yyline, yycolumn, yytext()); }
 "="     { return new Symbol(sym.assign, yyline, yycolumn, yytext()); }
+":="    { return new Symbol(sym.dassign, yyline, yycolumn, yytext()); }
 
 // Key Words
 "imprimir"  { return new Symbol(sym.imprimir, yyline, yycolumn, yytext()); }
 "true"      { return new Symbol(sym.kwTrue,    yyline, yycolumn, yytext()); }
 "false"     { return new Symbol(sym.kwFalse,   yyline, yycolumn, yytext()); }
 "if"        { return new Symbol(sym.kwIf,      yyline, yycolumn, yytext()); }
+"var"      { return new Symbol(sym.rVar,       yyline, yycolumn, yytext()); }
+"int"      { return new Symbol(sym.tipoInt,    yyline, yycolumn, yytext()); }
+"float64"  { return new Symbol(sym.tipoFloat,  yyline, yycolumn, yytext()); }
+"string"   { return new Symbol(sym.tipoString, yyline, yycolumn, yytext()); }
+"bool"     { return new Symbol(sym.tipoBool,   yyline, yycolumn, yytext()); }
+"rune"     { return new Symbol(sym.tipoRune,   yyline, yycolumn, yytext()); }
 
 // ID - String
 ({letter}|_)({letter}|{digit}|_)* { return new Symbol(sym.id, yyline, yycolumn, yytext()); }
