@@ -73,4 +73,5 @@ EXPRESION ::= minus EXPRESION:a             {: RESULT = new Negate(a); :}%prec U
             | id:n                          {: RESULT = new VarRef(n, nleft, nright); :}
             | integer:e                     {: RESULT = new Integers(new Integer(e), eleft, eright); :}
             | decimal:e                     {: RESULT = new Decimal(new Double(e),   eleft, eright); :}
+            | string:s                      {: RESULT = new StringLiteral(s, sleft, sright); :}
 ;

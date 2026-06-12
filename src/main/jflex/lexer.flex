@@ -19,7 +19,6 @@ import olc1.golite.reports.GoliteError;
 %column // conteo de columnas
 %8bit  // recibir caracteres en formato UTF-8
 // %debug // Habilitar modo debug para ver el proceso de tokenización
-%ignorecase // ignorar mayusculas y minusculas
 //%unicode
 
 %{
@@ -77,7 +76,7 @@ str_lex = ({normal_char} | {escape_char})*
 "if"        { return new Symbol(sym.kwIf,      yyline, yycolumn, yytext()); }
 
 // ID - String
-{letter}({letter}|{digit})* { return new Symbol(sym.id, yyline, yycolumn, yytext()); }
+({letter}|_)({letter}|{digit}|_)* { return new Symbol(sym.id, yyline, yycolumn, yytext()); }
 \"{str_lex}\"               { return new Symbol(sym.string, yyline, yycolumn, yytext()); }
 
 // Ignorar

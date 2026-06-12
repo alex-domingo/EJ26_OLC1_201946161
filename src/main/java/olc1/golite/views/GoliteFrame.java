@@ -59,15 +59,26 @@ public class GoliteFrame extends JFrame {
     }
 
     private void run() {
+        cleanConsole();
         try {
             lexer = new Lexer(new BufferedReader(new StringReader(editorPanel.getText())));
             parser = new parser(lexer);
 
             ASTNode ast = (ASTNode) parser.parse().value;
+
+            if (!lexer.errors.isEmpty() || !parser.errors.isEmpty()) {
+                consoleTextArea.append("Se encontraron errores en el análisis. Revise el reporte de errores.\n\n");
+                for (GoliteError error : lexer.errors) {
+                    consoleTextArea.append(error.toString() + "\n");
+                }
+                for (GoliteError error : parser.errors) {
+                    consoleTextArea.append(error.toString() + "\n");
+                }
+                return;
+            }
+
             InterpreterVisitor interpreter = new InterpreterVisitor();
             interpreter.Visit(ast);
-
-            cleanConsole();
             consoleTextArea.append(interpreter.output);
         } catch (Exception e) {
             consoleTextArea.append("Error: " + e.getMessage() + "\n");
