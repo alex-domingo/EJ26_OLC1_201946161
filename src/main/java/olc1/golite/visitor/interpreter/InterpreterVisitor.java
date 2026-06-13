@@ -471,23 +471,59 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
 
     // ===== Sentencias =====
     @Override
-    public ValueWrapper visit(Imprimir.Context ctx) {
-        ValueWrapper value = Visit(ctx.expression);
-        output += value.toString() + "\n";
+    public ValueWrapper visit(Println.Context ctx) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ctx.args.size(); i++) {
+            if (i > 0) {
+                sb.append(" ");
+            }
+            sb.append(Visit(ctx.args.get(i)).toString());
+        }
+        output += sb.toString() + "\n";
         return defaultVoid;
+    }
+
+    @Override
+    public ValueWrapper visit(Atoi.Context ctx) {
+        ValueWrapper v = Visit(ctx.expression);
+        if (!(v instanceof StringValue s)) {
+            throw semantic("strconv.Atoi requiere una cadena", ctx.line, ctx.column);
+        }
+        try {
+            return new IntValue(Integer.parseInt(s.value().trim()), ctx.line, ctx.column);
+        } catch (NumberFormatException ex) {
+            throw semantic("No se puede convertir a int la cadena: \"" + s.value() + "\"", ctx.line, ctx.column);
+        }
+    }
+
+    @Override
+    public ValueWrapper visit(ParseFloat.Context ctx) {
+        ValueWrapper v = Visit(ctx.expression);
+        if (!(v instanceof StringValue s)) {
+            throw semantic("strconv.ParseFloat requiere una cadena", ctx.line, ctx.column);
+        }
+        try {
+            return new DecimalValue(Double.parseDouble(s.value().trim()), ctx.line, ctx.column);
+        } catch (NumberFormatException ex) {
+            throw semantic("No se puede convertir a float64 la cadena: \"" + s.value() + "\"", ctx.line, ctx.column);
+        }
+    }
+
+    @Override
+    public ValueWrapper visit(TypeOf.Context ctx) {
+        ValueWrapper v = Visit(ctx.expression);
+        return new StringValue(typeOf(v).getLabel(), ctx.line, ctx.column);
     }
 
     @Override
     public ValueWrapper visit(IfNode.Context ctx) {
         ValueWrapper cond = Visit(ctx.condition);
-        // la condicion del if tiene que ser booleana
         if (!(cond instanceof BoolValue)) {
             throw semantic("La condicion del if debe ser de tipo bool", cond);
         }
         if (((BoolValue) cond).value()) {
             Visit(ctx.body);
         } else if (ctx.elseBranch != null) {
-            // el else puede ser otro if (else if) o un bloque
             Visit(ctx.elseBranch);
         }
         return defaultVoid;
@@ -495,7 +531,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
 
     @Override
     public ValueWrapper visit(ForNode.Context ctx) {
-        // ambito propio del for, para que la variable del init (ej. i) viva solo aqui
         Environment previo = currentEnv;
         currentEnv = new Environment(previo);
         try {
@@ -515,7 +550,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                 } catch (ContinueSignal cs) {
                     // continue: seguimos al post y la siguiente iteracion
                 } catch (BreakSignal bs) {
-                    // break: salimos del ciclo
                     break;
                 }
                 if (ctx.post != null) {
@@ -530,7 +564,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
 
     @Override
     public ValueWrapper visit(Bloque.Context ctx) {
-        // cada bloque crea un nuevo ambito hijo del actual
         Environment previo = currentEnv;
         currentEnv = new Environment(previo);
         try {
@@ -538,7 +571,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                 Visit(ctx.body);
             }
         } finally {
-            // pase lo que pase (incluido break/continue) volvemos al ambito anterior
             currentEnv = previo;
         }
         return defaultVoid;

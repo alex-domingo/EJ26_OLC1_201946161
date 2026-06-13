@@ -51,6 +51,13 @@ public interface Visitor<T> {
 
     T visit(Not.Context ctx);
 
+    // Embebidas que devuelven valor
+    T visit(Atoi.Context ctx);
+
+    T visit(ParseFloat.Context ctx);
+
+    T visit(TypeOf.Context ctx);
+
     // Variables
     T visit(VarRef.Context ctx);
 
@@ -63,7 +70,7 @@ public interface Visitor<T> {
     T visit(IncDec.Context ctx);
 
     // Sentencias
-    T visit(Imprimir.Context ctx);
+    T visit(Println.Context ctx);
 
     T visit(IfNode.Context ctx);
 
