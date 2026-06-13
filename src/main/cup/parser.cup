@@ -52,6 +52,7 @@ nonterminal ASTNode EXPRESION;
 nonterminal GoliteType TIPO;
 nonterminal ASTNode BLOQUE, IFSTMT, FORSTMT, FOR_SIMPLE;
 nonterminal List<ASTNode> ARGS, LISTA_EXPR;
+nonterminal PUNTOCOMA;
 
 // ===== Precedencia (de menor a mayor) =====
 precedence left or;
@@ -73,20 +74,24 @@ INSTRUCCIONES ::= INSTRUCCIONES:is INSTRUCCION:i  {: is.add(i); RESULT = is; :}
                 | INSTRUCCION:i                    {: RESULT = new Statments(i); :}
 ;
 
-INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen scol  {: RESULT = new Println(a, fleft, fright); :}
-              | rVar id:n TIPO:t assign EXPRESION:e scol          {: RESULT = new VarDecl(n, t, e, nleft, nright); :}
-              | rVar id:n TIPO:t scol                             {: RESULT = new VarDecl(n, t, null, nleft, nright); :}
-              | id:n dassign EXPRESION:e scol                     {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
-              | id:n assign EXPRESION:e scol                      {: RESULT = new Assign(n, e, nleft, nright); :}
-              | id:n plusassign EXPRESION:e scol                  {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
-              | id:n minusassign EXPRESION:e scol                 {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
-              | id:n inc scol                                     {: RESULT = new IncDec(n, '+', nleft, nright); :}
-              | kwBreak:b scol                                    {: RESULT = new BreakNode(bleft, bright); :}
-              | kwContinue:c scol                                 {: RESULT = new ContinueNode(cleft, cright); :}
-              | IFSTMT:s                                          {: RESULT = s; :}
-              | FORSTMT:s                                         {: RESULT = s; :}
-              | BLOQUE:b                                          {: RESULT = b; :}
-              | error scol                                        {: RESULT = null; :}
+PUNTOCOMA ::= scol
+            |
+;
+
+INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen PUNTOCOMA  {: RESULT = new Println(a, fleft, fright); :}
+              | rVar id:n TIPO:t assign EXPRESION:e PUNTOCOMA          {: RESULT = new VarDecl(n, t, e, nleft, nright); :}
+              | rVar id:n TIPO:t PUNTOCOMA                             {: RESULT = new VarDecl(n, t, null, nleft, nright); :}
+              | id:n dassign EXPRESION:e PUNTOCOMA                     {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
+              | id:n assign EXPRESION:e PUNTOCOMA                      {: RESULT = new Assign(n, e, nleft, nright); :}
+              | id:n plusassign EXPRESION:e PUNTOCOMA                  {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
+              | id:n minusassign EXPRESION:e PUNTOCOMA                 {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
+              | id:n inc PUNTOCOMA                                     {: RESULT = new IncDec(n, '+', nleft, nright); :}
+              | kwBreak:b PUNTOCOMA                                    {: RESULT = new BreakNode(bleft, bright); :}
+              | kwContinue:c PUNTOCOMA                                 {: RESULT = new ContinueNode(cleft, cright); :}
+              | IFSTMT:s                                               {: RESULT = s; :}
+              | FORSTMT:s                                              {: RESULT = s; :}
+              | BLOQUE:b                                               {: RESULT = b; :}
+              | error scol                                             {: RESULT = null; :}
 ;
 
 BLOQUE ::= lbrace INSTRUCCIONES:is rbrace  {: RESULT = new Bloque(is); :}

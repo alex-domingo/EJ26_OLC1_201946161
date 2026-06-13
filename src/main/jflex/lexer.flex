@@ -17,7 +17,7 @@ import olc1.golite.reports.Token;
 %public
 %line
 %column
-%8bit
+%unicode
 
 %{
     // errores lexicos encontrados
