@@ -43,12 +43,15 @@ terminal equal, nequal, less, lesseq, greater, greatereq;
 terminal and, or, not;
 terminal plusassign, minusassign;
 terminal String runeLit;
+terminal kwElse, kwFor, kwBreak, kwContinue;
+terminal inc;
 
 nonterminal Statments INICIO;
 nonterminal Statments INSTRUCCIONES;
 nonterminal ASTNode INSTRUCCION;
 nonterminal ASTNode EXPRESION;
 nonterminal GoliteType TIPO;
+nonterminal ASTNode BLOQUE, IFSTMT, FORSTMT, FOR_SIMPLE;
 
 precedence left or;
 precedence left and;
@@ -71,7 +74,12 @@ INSTRUCCIONES ::= INSTRUCCIONES:is INSTRUCCION:i     {: is.add(i); RESULT = is; 
 
 INSTRUCCION ::= imprimir lparen EXPRESION:e rparen scol              {: RESULT = new Imprimir(e); :}
               | id:n assign EXPRESION:e scol                          {: RESULT = new Assign(n, e, nleft, nright); :}
-              | kwIf lparen EXPRESION:c rparen lbrace INSTRUCCION:b rbrace {: RESULT = new IfNode(c, b); :}
+              | id:n inc scol                        {: RESULT = new IncDec(n, '+', nleft, nright); :}
+              | kwBreak:b scol                       {: RESULT = new BreakNode(bleft, bright); :}
+              | kwContinue:c scol                    {: RESULT = new ContinueNode(cleft, cright); :}
+              | IFSTMT:s                             {: RESULT = s; :}
+              | FORSTMT:s                            {: RESULT = s; :}
+              | BLOQUE:b                             {: RESULT = b; :}
               | id:n plusassign EXPRESION:e scol   {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
               | id:n minusassign EXPRESION:e scol  {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
               | error scol                                                {: RESULT = null; :}
@@ -103,6 +111,28 @@ EXPRESION ::= minus EXPRESION:a             {: RESULT = new Negate(a); :}%prec U
             | EXPRESION:a or EXPRESION:b         {: RESULT = new Or(a, b); :}
             | not EXPRESION:a                    {: RESULT = new Not(a); :}
             | runeLit:r                          {: RESULT = new RuneLiteral(r, rleft, rright); :}
+;
+
+BLOQUE ::= lbrace INSTRUCCIONES:is rbrace  {: RESULT = new Bloque(is); :}
+         | lbrace rbrace                    {: RESULT = new Bloque(null); :}
+;
+
+IFSTMT ::= kwIf EXPRESION:c BLOQUE:b                  {: RESULT = new IfNode(c, b, null); :}
+         | kwIf EXPRESION:c BLOQUE:b kwElse BLOQUE:e  {: RESULT = new IfNode(c, b, e); :}
+         | kwIf EXPRESION:c BLOQUE:b kwElse IFSTMT:e  {: RESULT = new IfNode(c, b, e); :}
+;
+
+FORSTMT ::= kwFor EXPRESION:c BLOQUE:b
+                {: RESULT = new ForNode(null, c, null, b); :}
+          | kwFor FOR_SIMPLE:i scol EXPRESION:c scol FOR_SIMPLE:p BLOQUE:b
+                {: RESULT = new ForNode(i, c, p, b); :}
+;
+
+FOR_SIMPLE ::= id:n dassign EXPRESION:e    {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
+             | id:n assign EXPRESION:e      {: RESULT = new Assign(n, e, nleft, nright); :}
+             | id:n plusassign EXPRESION:e  {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
+             | id:n minusassign EXPRESION:e {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
+             | id:n inc                      {: RESULT = new IncDec(n, '+', nleft, nright); :}
 ;
 
 TIPO ::= tipoInt    {: RESULT = GoliteType.INT; :}

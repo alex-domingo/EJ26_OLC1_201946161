@@ -71,6 +71,7 @@ str_lex = ({normal_char} | {escape_char})*
 "}"     { return new Symbol(sym.rbrace, yyline, yycolumn, yytext()); }
 "="     { return new Symbol(sym.assign, yyline, yycolumn, yytext()); }
 ":="    { return new Symbol(sym.dassign, yyline, yycolumn, yytext()); }
+"++"    { return new Symbol(sym.inc, yyline, yycolumn, yytext()); }
 
 // Comparacion, logicos, modulo y asignacion compuesta
 "=="    { return new Symbol(sym.equal,       yyline, yycolumn, yytext()); }
@@ -97,6 +98,10 @@ str_lex = ({normal_char} | {escape_char})*
 "string"   { return new Symbol(sym.tipoString, yyline, yycolumn, yytext()); }
 "bool"     { return new Symbol(sym.tipoBool,   yyline, yycolumn, yytext()); }
 "rune"     { return new Symbol(sym.tipoRune,   yyline, yycolumn, yytext()); }
+"else"     { return new Symbol(sym.kwElse,     yyline, yycolumn, yytext()); }
+"for"      { return new Symbol(sym.kwFor,      yyline, yycolumn, yytext()); }
+"break"    { return new Symbol(sym.kwBreak,    yyline, yycolumn, yytext()); }
+"continue" { return new Symbol(sym.kwContinue, yyline, yycolumn, yytext()); }
 
 // Literal rune (caracter entre comillas simples)
 \'({rune_normal}|{rune_escape})\'  { return new Symbol(sym.runeLit, yyline, yycolumn, yytext()); }

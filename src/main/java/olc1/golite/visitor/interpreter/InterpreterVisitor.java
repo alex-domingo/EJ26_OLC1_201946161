@@ -9,6 +9,8 @@ import olc1.golite.symbols.Environment;
 import olc1.golite.symbols.GoliteType;
 import olc1.golite.symbols.SymbolEntry;
 import olc1.golite.visitor.Visitor;
+import olc1.golite.visitor.interpreter.control.BreakSignal;
+import olc1.golite.visitor.interpreter.control.ContinueSignal;
 import olc1.golite.visitor.interpreter.value.*;
 
 public class InterpreterVisitor implements Visitor<ValueWrapper> {
@@ -48,7 +50,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         };
     }
 
-    // saber si un valor es numerico (int o float64) nos sirve para varias operaciones
+    // numerico = int o float64
     private boolean esNumerico(ValueWrapper v) {
         return v instanceof IntValue || v instanceof DecimalValue;
     }
@@ -78,8 +80,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         };
     }
 
-    // valida que 'value' se pueda asignar al tipo 'declared'.
-    // la unica conversion implicita permitida es int -> float64
+    // valida asignabilidad a 'declared'. unica conversion implicita: int -> float64
     private ValueWrapper checkAndConvert(GoliteType declared, ValueWrapper value, int line, int column) {
         GoliteType actual = typeOf(value);
         if (actual == declared) {
@@ -93,7 +94,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                 + " a una variable de tipo " + declared.getLabel(), line, column);
     }
 
-    // ===== Aritmetica (en helpers para reusarla en += y -=) =====
+    // ===== Aritmetica (en helpers para reusarla en +=, -= e i++) =====
     private ValueWrapper sumar(ValueWrapper l, ValueWrapper r) {
         return switch (l) {
             case IntValue a when r instanceof IntValue b ->
@@ -143,7 +144,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     private ValueWrapper dividir(ValueWrapper l, ValueWrapper r) {
-        // primero revisamos la division entre cero
+        // revisamos division entre cero antes de operar
         if (esNumerico(r) && aDouble(r) == 0.0) {
             throw semantic("No se puede dividir entre cero", r);
         }
@@ -450,8 +451,19 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
 
         // += es como variable = variable + expr, y -= igual con la resta
         ValueWrapper resultado = (ctx.op == '+') ? sumar(actual, rhs) : restar(actual, rhs);
+        ValueWrapper convertido = checkAndConvert(entry.getType(), resultado, ctx.line, ctx.column);
+        entry.setValue(convertido);
+        return defaultVoid;
+    }
 
-        // el resultado debe poder asignarse de vuelta al tipo de la variable
+    @Override
+    public ValueWrapper visit(IncDec.Context ctx) {
+        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
+        ValueWrapper actual = entry.getValue();
+        ValueWrapper uno = new IntValue(1, ctx.line, ctx.column);
+
+        // i++ equivale a i = i + 1
+        ValueWrapper resultado = (ctx.op == '+') ? sumar(actual, uno) : restar(actual, uno);
         ValueWrapper convertido = checkAndConvert(entry.getType(), resultado, ctx.line, ctx.column);
         entry.setValue(convertido);
         return defaultVoid;
@@ -474,8 +486,72 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         }
         if (((BoolValue) cond).value()) {
             Visit(ctx.body);
+        } else if (ctx.elseBranch != null) {
+            // el else puede ser otro if (else if) o un bloque
+            Visit(ctx.elseBranch);
         }
         return defaultVoid;
+    }
+
+    @Override
+    public ValueWrapper visit(ForNode.Context ctx) {
+        // ambito propio del for, para que la variable del init (ej. i) viva solo aqui
+        Environment previo = currentEnv;
+        currentEnv = new Environment(previo);
+        try {
+            if (ctx.init != null) {
+                Visit(ctx.init);
+            }
+            while (true) {
+                ValueWrapper cond = Visit(ctx.condition);
+                if (!(cond instanceof BoolValue)) {
+                    throw semantic("La condicion del for debe ser de tipo bool", cond);
+                }
+                if (!((BoolValue) cond).value()) {
+                    break;
+                }
+                try {
+                    Visit(ctx.body);
+                } catch (ContinueSignal cs) {
+                    // continue: seguimos al post y la siguiente iteracion
+                } catch (BreakSignal bs) {
+                    // break: salimos del ciclo
+                    break;
+                }
+                if (ctx.post != null) {
+                    Visit(ctx.post);
+                }
+            }
+        } finally {
+            currentEnv = previo;
+        }
+        return defaultVoid;
+    }
+
+    @Override
+    public ValueWrapper visit(Bloque.Context ctx) {
+        // cada bloque crea un nuevo ambito hijo del actual
+        Environment previo = currentEnv;
+        currentEnv = new Environment(previo);
+        try {
+            if (ctx.body != null) {
+                Visit(ctx.body);
+            }
+        } finally {
+            // pase lo que pase (incluido break/continue) volvemos al ambito anterior
+            currentEnv = previo;
+        }
+        return defaultVoid;
+    }
+
+    @Override
+    public ValueWrapper visit(BreakNode.Context ctx) {
+        throw new BreakSignal(ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(ContinueNode.Context ctx) {
+        throw new ContinueSignal(ctx.line, ctx.column);
     }
 
     @Override

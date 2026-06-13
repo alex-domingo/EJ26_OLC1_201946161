@@ -13,6 +13,8 @@ import olc1.golite.ast.ASTNode;
 import olc1.golite.reports.GoliteError;
 import olc1.golite.reports.SemanticException;
 import olc1.golite.visitor.interpreter.InterpreterVisitor;
+import olc1.golite.visitor.interpreter.control.BreakSignal;
+import olc1.golite.visitor.interpreter.control.ContinueSignal;
 
 public class GoliteFrame extends JFrame {
 
@@ -83,6 +85,14 @@ public class GoliteFrame extends JFrame {
             consoleTextArea.append(interpreter.output);
         } catch (SemanticException se) {
             consoleTextArea.append(se.getError().toString() + "\n");
+        } catch (BreakSignal bs) {
+            consoleTextArea.append(new GoliteError("Semantico",
+                    "La sentencia break solo puede usarse dentro de un ciclo",
+                    bs.getLine(), bs.getColumn()).toString() + "\n");
+        } catch (ContinueSignal cs) {
+            consoleTextArea.append(new GoliteError("Semantico",
+                    "La sentencia continue solo puede usarse dentro de un ciclo",
+                    cs.getLine(), cs.getColumn()).toString() + "\n");
         } catch (Exception e) {
             consoleTextArea.append("Error: " + e.getMessage() + "\n");
         }
