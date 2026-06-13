@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>olc1.golite</groupId>
-    <artifactId>clase06</artifactId>
+    <artifactId>golite</artifactId>
     <version>1.0</version>
 
     <properties>
