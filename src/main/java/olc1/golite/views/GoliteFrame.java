@@ -71,11 +71,17 @@ public class GoliteFrame extends JFrame {
             lexer = new Lexer(new BufferedReader(new StringReader(editorPanel.getText())));
             parser = new parser(lexer);
 
-            ASTNode ast = (ASTNode) parser.parse().value;
+            Object result = parser.parse().value;
 
             // si hubo errores lexicos o sintacticos no interpretamos
             if (!lexer.errors.isEmpty() || !parser.errors.isEmpty()) {
                 consoleTextArea.append("Se encontraron errores en el análisis. Revise el reporte de errores.\n");
+                return;
+            }
+
+            // si no se construyo un AST valido evitamos el cast invalido
+            if (!(result instanceof ASTNode ast)) {
+                consoleTextArea.append("No se pudo construir el AST. Revise el reporte de errores.\n");
                 return;
             }
 
@@ -105,9 +111,11 @@ public class GoliteFrame extends JFrame {
         try {
             Lexer lx = new Lexer(new BufferedReader(new StringReader(editorPanel.getText())));
             parser ps = new parser(lx);
-            ASTNode ast = (ASTNode) ps.parse().value;
+            Object parsed = ps.parse().value;
             all.addAll(lx.errors);
             all.addAll(ps.errors);
+
+            ASTNode ast = (parsed instanceof ASTNode node) ? node : null;
 
             if (lx.errors.isEmpty() && ps.errors.isEmpty() && ast != null) {
                 try {
