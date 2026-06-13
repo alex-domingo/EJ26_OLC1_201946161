@@ -21,7 +21,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         return node.accept(this);
     }
 
-    // ---------- Helpers de error y tipos ----------
+    // ===== Helpers de error =====
     private SemanticException semantic(String msg, ValueWrapper at) {
         return new SemanticException(new GoliteError("Semantico", msg, at.line(), at.column()));
     }
@@ -30,6 +30,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         return new SemanticException(new GoliteError("Semantico", msg, line, column));
     }
 
+    // ===== Helpers de tipos =====
     private GoliteType typeOf(ValueWrapper v) {
         return switch (v) {
             case IntValue x ->
@@ -45,6 +46,19 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
             case VoidValue x ->
                 GoliteType.VOID;
         };
+    }
+
+    // saber si un valor es numerico (int o float64) nos sirve para varias operaciones
+    private boolean esNumerico(ValueWrapper v) {
+        return v instanceof IntValue || v instanceof DecimalValue;
+    }
+
+    // pasamos cualquier numerico a double para operar/comparar mezclando int y float64
+    private double aDouble(ValueWrapper v) {
+        if (v instanceof IntValue i) {
+            return i.value();
+        }
+        return ((DecimalValue) v).value();
     }
 
     private ValueWrapper defaultValue(GoliteType type, int line, int column) {
@@ -64,7 +78,8 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         };
     }
 
-    // Verifica asignabilidad a 'declared'; aplica conversion implicita int -> float64
+    // valida que 'value' se pueda asignar al tipo 'declared'.
+    // la unica conversion implicita permitida es int -> float64
     private ValueWrapper checkAndConvert(GoliteType declared, ValueWrapper value, int line, int column) {
         GoliteType actual = typeOf(value);
         if (actual == declared) {
@@ -78,7 +93,170 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                 + " a una variable de tipo " + declared.getLabel(), line, column);
     }
 
-    // ---------- Literales ----------
+    // ===== Aritmetica (en helpers para reusarla en += y -=) =====
+    private ValueWrapper sumar(ValueWrapper l, ValueWrapper r) {
+        return switch (l) {
+            case IntValue a when r instanceof IntValue b ->
+                new IntValue(a.value() + b.value(), a.line(), a.column());
+            case IntValue a when r instanceof DecimalValue b ->
+                new DecimalValue(a.value() + b.value(), a.line(), a.column());
+            case DecimalValue a when r instanceof IntValue b ->
+                new DecimalValue(a.value() + b.value(), a.line(), a.column());
+            case DecimalValue a when r instanceof DecimalValue b ->
+                new DecimalValue(a.value() + b.value(), a.line(), a.column());
+            // las cadenas se concatenan con +
+            case StringValue a when r instanceof StringValue b ->
+                new StringValue(a.value() + b.value(), a.line(), a.column());
+            default ->
+                throw semantic("Operacion invalida: " + l.getTypeName() + " + " + r.getTypeName(), l);
+        };
+    }
+
+    private ValueWrapper restar(ValueWrapper l, ValueWrapper r) {
+        return switch (l) {
+            case IntValue a when r instanceof IntValue b ->
+                new IntValue(a.value() - b.value(), a.line(), a.column());
+            case IntValue a when r instanceof DecimalValue b ->
+                new DecimalValue(a.value() - b.value(), a.line(), a.column());
+            case DecimalValue a when r instanceof IntValue b ->
+                new DecimalValue(a.value() - b.value(), a.line(), a.column());
+            case DecimalValue a when r instanceof DecimalValue b ->
+                new DecimalValue(a.value() - b.value(), a.line(), a.column());
+            default ->
+                throw semantic("Operacion invalida: " + l.getTypeName() + " - " + r.getTypeName(), l);
+        };
+    }
+
+    private ValueWrapper multiplicar(ValueWrapper l, ValueWrapper r) {
+        return switch (l) {
+            case IntValue a when r instanceof IntValue b ->
+                new IntValue(a.value() * b.value(), a.line(), a.column());
+            case IntValue a when r instanceof DecimalValue b ->
+                new DecimalValue(a.value() * b.value(), a.line(), a.column());
+            case DecimalValue a when r instanceof IntValue b ->
+                new DecimalValue(a.value() * b.value(), a.line(), a.column());
+            case DecimalValue a when r instanceof DecimalValue b ->
+                new DecimalValue(a.value() * b.value(), a.line(), a.column());
+            default ->
+                throw semantic("Operacion invalida: " + l.getTypeName() + " * " + r.getTypeName(), l);
+        };
+    }
+
+    private ValueWrapper dividir(ValueWrapper l, ValueWrapper r) {
+        // primero revisamos la division entre cero
+        if (esNumerico(r) && aDouble(r) == 0.0) {
+            throw semantic("No se puede dividir entre cero", r);
+        }
+        return switch (l) {
+            case IntValue a when r instanceof IntValue b ->
+                new IntValue(a.value() / b.value(), a.line(), a.column());
+            case IntValue a when r instanceof DecimalValue b ->
+                new DecimalValue(a.value() / b.value(), a.line(), a.column());
+            case DecimalValue a when r instanceof IntValue b ->
+                new DecimalValue(a.value() / b.value(), a.line(), a.column());
+            case DecimalValue a when r instanceof DecimalValue b ->
+                new DecimalValue(a.value() / b.value(), a.line(), a.column());
+            default ->
+                throw semantic("Operacion invalida: " + l.getTypeName() + " / " + r.getTypeName(), l);
+        };
+    }
+
+    private ValueWrapper modulo(ValueWrapper l, ValueWrapper r) {
+        // el modulo solo aplica entre enteros
+        if (l instanceof IntValue a && r instanceof IntValue b) {
+            if (b.value() == 0) {
+                throw semantic("No se puede aplicar modulo entre cero", r);
+            }
+            return new IntValue(a.value() % b.value(), a.line(), a.column());
+        }
+        throw semantic("Operacion invalida: " + l.getTypeName() + " % " + r.getTypeName(), l);
+    }
+
+    // ===== Comparaciones =====
+    // igualdad: numericos (mezclando int/float), bool, string y rune
+    private boolean sonIguales(ValueWrapper a, ValueWrapper b) {
+        if (esNumerico(a) && esNumerico(b)) {
+            return aDouble(a) == aDouble(b);
+        }
+        if (a instanceof BoolValue x && b instanceof BoolValue y) {
+            return x.value() == y.value();
+        }
+        if (a instanceof StringValue x && b instanceof StringValue y) {
+            return x.value().equals(y.value());
+        }
+        if (a instanceof RuneValue x && b instanceof RuneValue y) {
+            return x.value() == y.value();
+        }
+        throw semantic("No se pueden comparar los tipos " + a.getTypeName() + " y " + b.getTypeName(), a);
+    }
+
+    // orden (< <= > >=): solo numericos y runes (los runes por su valor ASCII)
+    private double compararOrden(ValueWrapper a, ValueWrapper b) {
+        if (esNumerico(a) && esNumerico(b)) {
+            return aDouble(a) - aDouble(b);
+        }
+        if (a instanceof RuneValue x && b instanceof RuneValue y) {
+            return x.value() - y.value();
+        }
+        throw semantic("No se puede comparar el orden entre " + a.getTypeName() + " y " + b.getTypeName(), a);
+    }
+
+    // ===== Helpers de strings y runes =====
+    // procesa las secuencias de escape dentro de una cadena
+    private String procesarEscapes(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char sig = s.charAt(i + 1);
+                switch (sig) {
+                    case 'n' ->
+                        sb.append('\n');
+                    case 'r' ->
+                        sb.append('\r');
+                    case 't' ->
+                        sb.append('\t');
+                    case '"' ->
+                        sb.append('"');
+                    case '\\' ->
+                        sb.append('\\');
+                    default -> {
+                        sb.append('\\');
+                        sb.append(sig);
+                    }
+                }
+                i++; // ya consumimos el caracter que seguia a la barra
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    // convierte el lexema de un rune ('A', '\n', ...) en su codigo de caracter
+    private int parseRune(String lexeme) {
+        String inner = lexeme.substring(1, lexeme.length() - 1); // quitamos las comillas simples
+        if (inner.length() == 1) {
+            return inner.charAt(0);
+        }
+        char esc = inner.charAt(1); // es un escape como \n
+        return switch (esc) {
+            case 'n' ->
+                '\n';
+            case 'r' ->
+                '\r';
+            case 't' ->
+                '\t';
+            case '\\' ->
+                '\\';
+            case '\'' ->
+                '\'';
+            default ->
+                esc;
+        };
+    }
+
+    // ===== Literales =====
     @Override
     public ValueWrapper visit(Integers.Context ctx) {
         return new IntValue(ctx.value, ctx.line, ctx.column);
@@ -96,10 +274,15 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
 
     @Override
     public ValueWrapper visit(StringLiteral.Context ctx) {
-        // El lexema viene con comillas, las quitamos para el contenido real
+        // el lexema viene con comillas dobles; las quitamos y procesamos los escapes
         String raw = ctx.value;
         String content = (raw.length() >= 2) ? raw.substring(1, raw.length() - 1) : raw;
-        return new StringValue(content, ctx.line, ctx.column);
+        return new StringValue(procesarEscapes(content), ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(RuneLiteral.Context ctx) {
+        return new RuneValue(parseRune(ctx.lexeme), ctx.line, ctx.column);
     }
 
     @Override
@@ -107,79 +290,30 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         return Visit(ctx.expression);
     }
 
-    // ---------- Aritmetica ----------
+    // ===== Aritmetica =====
     @Override
     public ValueWrapper visit(Add.Context ctx) {
-        ValueWrapper left = Visit(ctx.left);
-        ValueWrapper right = Visit(ctx.right);
-        return switch (left) {
-            case IntValue l when right instanceof IntValue r ->
-                new IntValue(l.value() + r.value(), l.line(), l.column());
-            case IntValue l when right instanceof DecimalValue r ->
-                new DecimalValue(l.value() + r.value(), l.line(), l.column());
-            case DecimalValue l when right instanceof IntValue r ->
-                new DecimalValue(l.value() + r.value(), l.line(), l.column());
-            case DecimalValue l when right instanceof DecimalValue r ->
-                new DecimalValue(l.value() + r.value(), l.line(), l.column());
-            case StringValue l when right instanceof StringValue r ->
-                new StringValue(l.value() + r.value(), l.line(), l.column());
-            default ->
-                throw semantic("Operacion invalida: " + left.getTypeName() + " + " + right.getTypeName(), left);
-        };
+        return sumar(Visit(ctx.left), Visit(ctx.right));
     }
 
     @Override
     public ValueWrapper visit(Sub.Context ctx) {
-        ValueWrapper left = Visit(ctx.left);
-        ValueWrapper right = Visit(ctx.right);
-        return switch (left) {
-            case IntValue l when right instanceof IntValue r ->
-                new IntValue(l.value() - r.value(), l.line(), l.column());
-            case IntValue l when right instanceof DecimalValue r ->
-                new DecimalValue(l.value() - r.value(), l.line(), l.column());
-            case DecimalValue l when right instanceof IntValue r ->
-                new DecimalValue(l.value() - r.value(), l.line(), l.column());
-            case DecimalValue l when right instanceof DecimalValue r ->
-                new DecimalValue(l.value() - r.value(), l.line(), l.column());
-            default ->
-                throw semantic("Operacion invalida: " + left.getTypeName() + " - " + right.getTypeName(), left);
-        };
+        return restar(Visit(ctx.left), Visit(ctx.right));
     }
 
     @Override
     public ValueWrapper visit(Mul.Context ctx) {
-        ValueWrapper left = Visit(ctx.left);
-        ValueWrapper right = Visit(ctx.right);
-        return switch (left) {
-            case IntValue l when right instanceof IntValue r ->
-                new IntValue(l.value() * r.value(), l.line(), l.column());
-            case IntValue l when right instanceof DecimalValue r ->
-                new DecimalValue(l.value() * r.value(), l.line(), l.column());
-            case DecimalValue l when right instanceof IntValue r ->
-                new DecimalValue(l.value() * r.value(), l.line(), l.column());
-            case DecimalValue l when right instanceof DecimalValue r ->
-                new DecimalValue(l.value() * r.value(), l.line(), l.column());
-            default ->
-                throw semantic("Operacion invalida: " + left.getTypeName() + " * " + right.getTypeName(), left);
-        };
+        return multiplicar(Visit(ctx.left), Visit(ctx.right));
     }
 
     @Override
     public ValueWrapper visit(Div.Context ctx) {
-        ValueWrapper left = Visit(ctx.left);
-        ValueWrapper right = Visit(ctx.right);
-        return switch (left) {
-            case IntValue l when right instanceof IntValue r ->
-                new IntValue(l.value() / r.value(), l.line(), l.column());
-            case IntValue l when right instanceof DecimalValue r ->
-                new DecimalValue(l.value() / r.value(), l.line(), l.column());
-            case DecimalValue l when right instanceof IntValue r ->
-                new DecimalValue(l.value() / r.value(), l.line(), l.column());
-            case DecimalValue l when right instanceof DecimalValue r ->
-                new DecimalValue(l.value() / r.value(), l.line(), l.column());
-            default ->
-                throw semantic("Operacion invalida: " + left.getTypeName() + " / " + right.getTypeName(), left);
-        };
+        return dividir(Visit(ctx.left), Visit(ctx.right));
+    }
+
+    @Override
+    public ValueWrapper visit(Mod.Context ctx) {
+        return modulo(Visit(ctx.left), Visit(ctx.right));
     }
 
     @Override
@@ -195,7 +329,80 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         };
     }
 
-    // ---------- Variables ----------
+    // ===== Comparaciones (devuelven bool) =====
+    @Override
+    public ValueWrapper visit(Equal.Context ctx) {
+        ValueWrapper l = Visit(ctx.left);
+        ValueWrapper r = Visit(ctx.right);
+        return new BoolValue(sonIguales(l, r), l.line(), l.column());
+    }
+
+    @Override
+    public ValueWrapper visit(NotEqual.Context ctx) {
+        ValueWrapper l = Visit(ctx.left);
+        ValueWrapper r = Visit(ctx.right);
+        return new BoolValue(!sonIguales(l, r), l.line(), l.column());
+    }
+
+    @Override
+    public ValueWrapper visit(Greater.Context ctx) {
+        ValueWrapper l = Visit(ctx.left);
+        ValueWrapper r = Visit(ctx.right);
+        return new BoolValue(compararOrden(l, r) > 0, l.line(), l.column());
+    }
+
+    @Override
+    public ValueWrapper visit(GreaterEqual.Context ctx) {
+        ValueWrapper l = Visit(ctx.left);
+        ValueWrapper r = Visit(ctx.right);
+        return new BoolValue(compararOrden(l, r) >= 0, l.line(), l.column());
+    }
+
+    @Override
+    public ValueWrapper visit(Less.Context ctx) {
+        ValueWrapper l = Visit(ctx.left);
+        ValueWrapper r = Visit(ctx.right);
+        return new BoolValue(compararOrden(l, r) < 0, l.line(), l.column());
+    }
+
+    @Override
+    public ValueWrapper visit(LessEqual.Context ctx) {
+        ValueWrapper l = Visit(ctx.left);
+        ValueWrapper r = Visit(ctx.right);
+        return new BoolValue(compararOrden(l, r) <= 0, l.line(), l.column());
+    }
+
+    // ===== Logicos (ambos lados deben ser bool) =====
+    @Override
+    public ValueWrapper visit(And.Context ctx) {
+        ValueWrapper l = Visit(ctx.left);
+        ValueWrapper r = Visit(ctx.right);
+        if (l instanceof BoolValue a && r instanceof BoolValue b) {
+            return new BoolValue(a.value() && b.value(), a.line(), a.column());
+        }
+        throw semantic("El operador && requiere expresiones booleanas", l);
+    }
+
+    @Override
+    public ValueWrapper visit(Or.Context ctx) {
+        ValueWrapper l = Visit(ctx.left);
+        ValueWrapper r = Visit(ctx.right);
+        if (l instanceof BoolValue a && r instanceof BoolValue b) {
+            return new BoolValue(a.value() || b.value(), a.line(), a.column());
+        }
+        throw semantic("El operador || requiere expresiones booleanas", l);
+    }
+
+    @Override
+    public ValueWrapper visit(Not.Context ctx) {
+        ValueWrapper v = Visit(ctx.expression);
+        if (v instanceof BoolValue b) {
+            return new BoolValue(!b.value(), b.line(), b.column());
+        }
+        throw semantic("El operador ! requiere una expresion booleana", v);
+    }
+
+    // ===== Variables =====
     @Override
     public ValueWrapper visit(VarDecl.Context ctx) {
         ValueWrapper value;
@@ -204,15 +411,15 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         if (ctx.value != null) {
             ValueWrapper evaluated = Visit(ctx.value);
             if (declared == null) {
-                // x := e   -> inferir el tipo del valor
+                // x := e  -> el tipo se infiere del valor
                 declared = typeOf(evaluated);
                 value = evaluated;
             } else {
-                // var x T = e   -> validar y (si aplica) convertir
+                // var x T = e  -> validamos y convertimos si aplica
                 value = checkAndConvert(declared, evaluated, ctx.line, ctx.column);
             }
         } else {
-            // var x T   -> valor por defecto del tipo
+            // var x T  -> toma el valor por defecto del tipo
             value = defaultValue(declared, ctx.line, ctx.column);
         }
 
@@ -229,13 +436,28 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     @Override
     public ValueWrapper visit(Assign.Context ctx) {
         ValueWrapper value = Visit(ctx.value);
-        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column); // error si no esta declarada
+        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
         ValueWrapper converted = checkAndConvert(entry.getType(), value, ctx.line, ctx.column);
         entry.setValue(converted);
         return defaultVoid;
     }
 
-    // ---------- Sentencias ----------
+    @Override
+    public ValueWrapper visit(CompoundAssign.Context ctx) {
+        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
+        ValueWrapper actual = entry.getValue();
+        ValueWrapper rhs = Visit(ctx.value);
+
+        // += es como variable = variable + expr, y -= igual con la resta
+        ValueWrapper resultado = (ctx.op == '+') ? sumar(actual, rhs) : restar(actual, rhs);
+
+        // el resultado debe poder asignarse de vuelta al tipo de la variable
+        ValueWrapper convertido = checkAndConvert(entry.getType(), resultado, ctx.line, ctx.column);
+        entry.setValue(convertido);
+        return defaultVoid;
+    }
+
+    // ===== Sentencias =====
     @Override
     public ValueWrapper visit(Imprimir.Context ctx) {
         ValueWrapper value = Visit(ctx.expression);
@@ -246,7 +468,11 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     @Override
     public ValueWrapper visit(IfNode.Context ctx) {
         ValueWrapper cond = Visit(ctx.condition);
-        if (cond instanceof BoolValue b && b.value()) {
+        // la condicion del if tiene que ser booleana
+        if (!(cond instanceof BoolValue)) {
+            throw semantic("La condicion del if debe ser de tipo bool", cond);
+        }
+        if (((BoolValue) cond).value()) {
             Visit(ctx.body);
         }
         return defaultVoid;
