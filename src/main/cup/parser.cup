@@ -38,6 +38,11 @@ terminal String id;
 terminal imprimir, kwTrue, kwFalse, kwIf;
 terminal rVar, dassign;
 terminal tipoInt, tipoFloat, tipoString, tipoBool, tipoRune;
+terminal percent;
+terminal equal, nequal, less, lesseq, greater, greatereq;
+terminal and, or, not;
+terminal plusassign, minusassign;
+terminal String runeLit;
 
 nonterminal Statments INICIO;
 nonterminal Statments INSTRUCCIONES;
@@ -45,9 +50,13 @@ nonterminal ASTNode INSTRUCCION;
 nonterminal ASTNode EXPRESION;
 nonterminal GoliteType TIPO;
 
+precedence left or;
+precedence left and;
+precedence left equal, nequal;
+precedence left less, lesseq, greater, greatereq;
 precedence left plus, minus;
-precedence left times, slash;
-precedence right UMENOS;
+precedence left times, slash, percent;
+precedence right not, UMENOS;
 
 start with INICIO;
 
@@ -63,6 +72,8 @@ INSTRUCCIONES ::= INSTRUCCIONES:is INSTRUCCION:i     {: is.add(i); RESULT = is; 
 INSTRUCCION ::= imprimir lparen EXPRESION:e rparen scol              {: RESULT = new Imprimir(e); :}
               | id:n assign EXPRESION:e scol                          {: RESULT = new Assign(n, e, nleft, nright); :}
               | kwIf lparen EXPRESION:c rparen lbrace INSTRUCCION:b rbrace {: RESULT = new IfNode(c, b); :}
+              | id:n plusassign EXPRESION:e scol   {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
+              | id:n minusassign EXPRESION:e scol  {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
               | error scol                                                {: RESULT = null; :}
               | rVar id:n TIPO:t assign EXPRESION:e scol  {: RESULT = new VarDecl(n, t, e, nleft, nright); :}
               | rVar id:n TIPO:t scol                     {: RESULT = new VarDecl(n, t, null, nleft, nright); :}
@@ -81,6 +92,17 @@ EXPRESION ::= minus EXPRESION:a             {: RESULT = new Negate(a); :}%prec U
             | integer:e                     {: RESULT = new Integers(new Integer(e), eleft, eright); :}
             | decimal:e                     {: RESULT = new Decimal(new Double(e),   eleft, eright); :}
             | string:s                      {: RESULT = new StringLiteral(s, sleft, sright); :}
+            | EXPRESION:a percent EXPRESION:b    {: RESULT = new Mod(a, b); :}
+            | EXPRESION:a equal EXPRESION:b      {: RESULT = new Equal(a, b); :}
+            | EXPRESION:a nequal EXPRESION:b     {: RESULT = new NotEqual(a, b); :}
+            | EXPRESION:a less EXPRESION:b       {: RESULT = new Less(a, b); :}
+            | EXPRESION:a lesseq EXPRESION:b     {: RESULT = new LessEqual(a, b); :}
+            | EXPRESION:a greater EXPRESION:b    {: RESULT = new Greater(a, b); :}
+            | EXPRESION:a greatereq EXPRESION:b  {: RESULT = new GreaterEqual(a, b); :}
+            | EXPRESION:a and EXPRESION:b        {: RESULT = new And(a, b); :}
+            | EXPRESION:a or EXPRESION:b         {: RESULT = new Or(a, b); :}
+            | not EXPRESION:a                    {: RESULT = new Not(a); :}
+            | runeLit:r                          {: RESULT = new RuneLiteral(r, rleft, rright); :}
 ;
 
 TIPO ::= tipoInt    {: RESULT = GoliteType.INT; :}

@@ -48,6 +48,8 @@ letter = [a-zA-Z]
 whitespace = [\ \r\t\f\n]+
 escape_char = \\ [\"\\nrt]
 normal_char = [^\"\\\n\r]
+rune_normal = [^\'\\\n\r]
+rune_escape = \\ [\'\\nrt]
 str_lex = ({normal_char} | {escape_char})*
 
 %%
@@ -70,6 +72,20 @@ str_lex = ({normal_char} | {escape_char})*
 "="     { return new Symbol(sym.assign, yyline, yycolumn, yytext()); }
 ":="    { return new Symbol(sym.dassign, yyline, yycolumn, yytext()); }
 
+// Comparacion, logicos, modulo y asignacion compuesta
+"=="    { return new Symbol(sym.equal,       yyline, yycolumn, yytext()); }
+"!="    { return new Symbol(sym.nequal,      yyline, yycolumn, yytext()); }
+"<="    { return new Symbol(sym.lesseq,      yyline, yycolumn, yytext()); }
+">="    { return new Symbol(sym.greatereq,   yyline, yycolumn, yytext()); }
+"<"     { return new Symbol(sym.less,        yyline, yycolumn, yytext()); }
+">"     { return new Symbol(sym.greater,     yyline, yycolumn, yytext()); }
+"&&"    { return new Symbol(sym.and,         yyline, yycolumn, yytext()); }
+"||"    { return new Symbol(sym.or,          yyline, yycolumn, yytext()); }
+"!"     { return new Symbol(sym.not,         yyline, yycolumn, yytext()); }
+"%"     { return new Symbol(sym.percent,     yyline, yycolumn, yytext()); }
+"+="    { return new Symbol(sym.plusassign,  yyline, yycolumn, yytext()); }
+"-="    { return new Symbol(sym.minusassign, yyline, yycolumn, yytext()); }
+
 // Key Words
 "imprimir"  { return new Symbol(sym.imprimir, yyline, yycolumn, yytext()); }
 "true"      { return new Symbol(sym.kwTrue,    yyline, yycolumn, yytext()); }
@@ -81,6 +97,9 @@ str_lex = ({normal_char} | {escape_char})*
 "string"   { return new Symbol(sym.tipoString, yyline, yycolumn, yytext()); }
 "bool"     { return new Symbol(sym.tipoBool,   yyline, yycolumn, yytext()); }
 "rune"     { return new Symbol(sym.tipoRune,   yyline, yycolumn, yytext()); }
+
+// Literal rune (caracter entre comillas simples)
+\'({rune_normal}|{rune_escape})\'  { return new Symbol(sym.runeLit, yyline, yycolumn, yytext()); }
 
 // ID - String
 ({letter}|_)({letter}|{digit}|_)* { return new Symbol(sym.id, yyline, yycolumn, yytext()); }
