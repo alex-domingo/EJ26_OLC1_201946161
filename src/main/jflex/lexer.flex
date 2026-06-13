@@ -7,30 +7,30 @@ import java.util.List;
 import java_cup.runtime.Symbol;
 
 import olc1.golite.reports.GoliteError;
+import olc1.golite.reports.Token;
 
 %%
 
-// Configuración de JFLEX
-%cup //Indicamos que vamos a usar CUP
-// Nombre de la clase del lexer
-%class Lexer 
-%public // Paquete del lexer
-%line // conteo de lienas
-%column // conteo de columnas
-%8bit  // recibir caracteres en formato UTF-8
-// %debug // Habilitar modo debug para ver el proceso de tokenización
-//%unicode
+// Configuracion de JFLEX
+%cup
+%class Lexer
+%public
+%line
+%column
+%8bit
 
 %{
-    // private Symbol symbol(int type) {
-    //     return new Symbol(type, yyline, yycolumn);
-    // }
-
-    // private Symbol symbol(int type, Object value) {
-    //     return new Symbol(type, yyline, yycolumn, value);
-    // }
-
+    // errores lexicos encontrados
     public final List<GoliteError> errors = new ArrayList<>();
+
+    // tokens reconocidos, para el reporte de tokens
+    public final List<Token> tokens = new ArrayList<>();
+
+    // helper: guarda el token en la lista y devuelve el Symbol que necesita CUP
+    private Symbol tok(int type, String tipo) {
+        tokens.add(new Token(tipo, yytext(), yyline, yycolumn));
+        return new Symbol(type, yyline, yycolumn, yytext());
+    }
 %}
 
 %init{
@@ -42,76 +42,91 @@ import olc1.golite.reports.GoliteError;
     return new Symbol(sym.EOF, yyline, yycolumn, yytext());
 %eofval}
 
-// Definición de patrones léxicos
+// Definicion de patrones lexicos
 digit = [0-9]
 letter = [a-zA-Z]
 whitespace = [\ \r\t\f\n]+
 escape_char = \\ [\"\\nrt]
 normal_char = [^\"\\\n\r]
+str_lex = ({normal_char} | {escape_char})*
 rune_normal = [^\'\\\n\r]
 rune_escape = \\ [\'\\nrt]
-str_lex = ({normal_char} | {escape_char})*
 
 %%
 
-// Numbers
-{digit}+\.{digit}+  { return new Symbol(sym.decimal, yyline, yycolumn, yytext()); }
-{digit}+            { return new Symbol(sym.integer, yyline, yycolumn, yytext()); }
+// Comentarios (se ignoran)
+"//"[^\n]*    { /* comentario de una linea */ }
+"/*"~"*/"     { /* comentario multilinea */ }
 
-// Symbols
-"("     { return new Symbol(sym.lparen, yyline, yycolumn, yytext()); }
-")"     { return new Symbol(sym.rparen, yyline, yycolumn, yytext()); }
-"+"     { return new Symbol(sym.plus, yyline, yycolumn, yytext()); }
-"-"     { return new Symbol(sym.minus, yyline, yycolumn, yytext()); }
-"*"     { return new Symbol(sym.times, yyline, yycolumn, yytext()); }
-"/"     { return new Symbol(sym.slash, yyline, yycolumn, yytext()); }
-// "="     { return new Symbol(sym.allocate); }
-";"     { return new Symbol(sym.scol, yyline, yycolumn, yytext()); }
-"{"     { return new Symbol(sym.lbrace, yyline, yycolumn, yytext()); }
-"}"     { return new Symbol(sym.rbrace, yyline, yycolumn, yytext()); }
-"="     { return new Symbol(sym.assign, yyline, yycolumn, yytext()); }
-":="    { return new Symbol(sym.dassign, yyline, yycolumn, yytext()); }
-"++"    { return new Symbol(sym.inc, yyline, yycolumn, yytext()); }
+// Numeros
+{digit}+\.{digit}+  { return tok(sym.decimal, "decimal"); }
+{digit}+            { return tok(sym.integer, "entero"); }
 
-// Comparacion, logicos, modulo y asignacion compuesta
-"=="    { return new Symbol(sym.equal,       yyline, yycolumn, yytext()); }
-"!="    { return new Symbol(sym.nequal,      yyline, yycolumn, yytext()); }
-"<="    { return new Symbol(sym.lesseq,      yyline, yycolumn, yytext()); }
-">="    { return new Symbol(sym.greatereq,   yyline, yycolumn, yytext()); }
-"<"     { return new Symbol(sym.less,        yyline, yycolumn, yytext()); }
-">"     { return new Symbol(sym.greater,     yyline, yycolumn, yytext()); }
-"&&"    { return new Symbol(sym.and,         yyline, yycolumn, yytext()); }
-"||"    { return new Symbol(sym.or,          yyline, yycolumn, yytext()); }
-"!"     { return new Symbol(sym.not,         yyline, yycolumn, yytext()); }
-"%"     { return new Symbol(sym.percent,     yyline, yycolumn, yytext()); }
-"+="    { return new Symbol(sym.plusassign,  yyline, yycolumn, yytext()); }
-"-="    { return new Symbol(sym.minusassign, yyline, yycolumn, yytext()); }
+// Operadores de dos caracteres (por claridad van primero)
+"=="    { return tok(sym.equal,       "igual"); }
+"!="    { return tok(sym.nequal,      "diferente"); }
+"<="    { return tok(sym.lesseq,      "menor_igual"); }
+">="    { return tok(sym.greatereq,   "mayor_igual"); }
+"&&"    { return tok(sym.and,         "and"); }
+"||"    { return tok(sym.or,          "or"); }
+"+="    { return tok(sym.plusassign,  "mas_igual"); }
+"-="    { return tok(sym.minusassign, "menos_igual"); }
+"++"    { return tok(sym.inc,         "incremento"); }
+":="    { return tok(sym.dassign,     "declaracion"); }
 
-// Key Words
-"imprimir"  { return new Symbol(sym.imprimir, yyline, yycolumn, yytext()); }
-"true"      { return new Symbol(sym.kwTrue,    yyline, yycolumn, yytext()); }
-"false"     { return new Symbol(sym.kwFalse,   yyline, yycolumn, yytext()); }
-"if"        { return new Symbol(sym.kwIf,      yyline, yycolumn, yytext()); }
-"var"      { return new Symbol(sym.rVar,       yyline, yycolumn, yytext()); }
-"int"      { return new Symbol(sym.tipoInt,    yyline, yycolumn, yytext()); }
-"float64"  { return new Symbol(sym.tipoFloat,  yyline, yycolumn, yytext()); }
-"string"   { return new Symbol(sym.tipoString, yyline, yycolumn, yytext()); }
-"bool"     { return new Symbol(sym.tipoBool,   yyline, yycolumn, yytext()); }
-"rune"     { return new Symbol(sym.tipoRune,   yyline, yycolumn, yytext()); }
-"else"     { return new Symbol(sym.kwElse,     yyline, yycolumn, yytext()); }
-"for"      { return new Symbol(sym.kwFor,      yyline, yycolumn, yytext()); }
-"break"    { return new Symbol(sym.kwBreak,    yyline, yycolumn, yytext()); }
-"continue" { return new Symbol(sym.kwContinue, yyline, yycolumn, yytext()); }
+// Operadores y simbolos de un caracter
+"("     { return tok(sym.lparen,  "parentesis_izq"); }
+")"     { return tok(sym.rparen,  "parentesis_der"); }
+"{"     { return tok(sym.lbrace,  "llave_izq"); }
+"}"     { return tok(sym.rbrace,  "llave_der"); }
+"+"     { return tok(sym.plus,    "suma"); }
+"-"     { return tok(sym.minus,   "resta"); }
+"*"     { return tok(sym.times,   "multiplicacion"); }
+"/"     { return tok(sym.slash,   "division"); }
+"%"     { return tok(sym.percent, "modulo"); }
+"<"     { return tok(sym.less,    "menor"); }
+">"     { return tok(sym.greater, "mayor"); }
+"!"     { return tok(sym.not,     "not"); }
+"="     { return tok(sym.assign,  "asignacion"); }
+";"     { return tok(sym.scol,    "punto_coma"); }
+","     { return tok(sym.comma,   "coma"); }
+"."     { return tok(sym.dot,     "punto"); }
 
-// Literal rune (caracter entre comillas simples)
-\'({rune_normal}|{rune_escape})\'  { return new Symbol(sym.runeLit, yyline, yycolumn, yytext()); }
+// Palabras reservadas (antes de la regla de id)
+"var"      { return tok(sym.rVar,       "reservada"); }
+"int"      { return tok(sym.tipoInt,    "tipo"); }
+"float64"  { return tok(sym.tipoFloat,  "tipo"); }
+"string"   { return tok(sym.tipoString, "tipo"); }
+"bool"     { return tok(sym.tipoBool,   "tipo"); }
+"rune"     { return tok(sym.tipoRune,   "tipo"); }
+"true"     { return tok(sym.kwTrue,     "reservada"); }
+"false"    { return tok(sym.kwFalse,    "reservada"); }
+"if"       { return tok(sym.kwIf,       "reservada"); }
+"else"     { return tok(sym.kwElse,     "reservada"); }
+"for"      { return tok(sym.kwFor,      "reservada"); }
+"break"    { return tok(sym.kwBreak,    "reservada"); }
+"continue" { return tok(sym.kwContinue, "reservada"); }
 
-// ID - String
-({letter}|_)({letter}|{digit}|_)* { return new Symbol(sym.id, yyline, yycolumn, yytext()); }
-\"{str_lex}\"               { return new Symbol(sym.string, yyline, yycolumn, yytext()); }
+// Funciones embebidas: paquete y metodo
+"fmt"        { return tok(sym.pkgFmt,      "paquete"); }
+"Println"    { return tok(sym.mPrintln,    "metodo"); }
+"strconv"    { return tok(sym.pkgStrconv,  "paquete"); }
+"Atoi"       { return tok(sym.mAtoi,       "metodo"); }
+"ParseFloat" { return tok(sym.mParseFloat, "metodo"); }
+"reflect"    { return tok(sym.pkgReflect,  "paquete"); }
+"TypeOf"     { return tok(sym.mTypeOf,     "metodo"); }
 
-// Ignorar
-{whitespace}    {/* pass */}
+// Identificadores
+({letter}|_)({letter}|{digit}|_)* { return tok(sym.id, "id"); }
 
-// Error
+// Literal cadena
+\"{str_lex}\"  { return tok(sym.string, "cadena"); }
+
+// Literal rune
+\'({rune_normal}|{rune_escape})\'  { return tok(sym.runeLit, "rune"); }
+
+// Espacios en blanco (se ignoran)
+{whitespace}    { /* pass */ }
+
+// Error lexico
 .   { errors.add(new GoliteError("Lexico", "Caracter no reconocido: " + yytext(), yyline, yycolumn)); }

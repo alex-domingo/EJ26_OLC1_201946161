@@ -9,8 +9,8 @@ import java_cup.runtime.Symbol;
 import olc1.golite.ast.ASTNode;
 import olc1.golite.ast.exp.*;
 import olc1.golite.ast.stm.*;
-import olc1.golite.reports.GoliteError;
 import olc1.golite.symbols.GoliteType;
+import olc1.golite.reports.GoliteError;
 
 parser code
 {:
@@ -25,34 +25,35 @@ parser code
     }
 :}
 
-action code
-{:
-    String consola = "";
-:}
-
+// ===== Terminales =====
 terminal String string, integer, decimal;
-terminal lparen, rparen, lbrace, rbrace;
-terminal plus, minus, times, slash, UMENOS;
-terminal scol, assign;
 terminal String id;
-terminal imprimir, kwTrue, kwFalse, kwIf;
-terminal rVar, dassign;
-terminal tipoInt, tipoFloat, tipoString, tipoBool, tipoRune;
-terminal percent;
+terminal String runeLit;
+
+terminal lparen, rparen, lbrace, rbrace;
+terminal plus, minus, times, slash, percent, UMENOS;
+terminal scol, comma, dot, assign;
 terminal equal, nequal, less, lesseq, greater, greatereq;
 terminal and, or, not;
-terminal plusassign, minusassign;
-terminal String runeLit;
-terminal kwElse, kwFor, kwBreak, kwContinue;
-terminal inc;
+terminal plusassign, minusassign, inc, dassign;
 
-nonterminal Statments INICIO;
-nonterminal Statments INSTRUCCIONES;
+terminal kwTrue, kwFalse, kwIf, kwElse, kwFor, kwBreak, kwContinue;
+terminal rVar;
+terminal tipoInt, tipoFloat, tipoString, tipoBool, tipoRune;
+
+terminal pkgFmt, mPrintln;
+terminal pkgStrconv, mAtoi, mParseFloat;
+terminal pkgReflect, mTypeOf;
+
+// ===== No terminales =====
+nonterminal Statments INICIO, INSTRUCCIONES;
 nonterminal ASTNode INSTRUCCION;
 nonterminal ASTNode EXPRESION;
 nonterminal GoliteType TIPO;
 nonterminal ASTNode BLOQUE, IFSTMT, FORSTMT, FOR_SIMPLE;
+nonterminal List<ASTNode> ARGS, LISTA_EXPR;
 
+// ===== Precedencia (de menor a mayor) =====
 precedence left or;
 precedence left and;
 precedence left equal, nequal;
@@ -63,54 +64,29 @@ precedence right not, UMENOS;
 
 start with INICIO;
 
-// Gramatica
+// ===== Gramatica =====
 
 INICIO ::= INSTRUCCIONES:i   {: RESULT = i; :}
 ;
 
-INSTRUCCIONES ::= INSTRUCCIONES:is INSTRUCCION:i     {: is.add(i); RESULT = is; :}
-                | INSTRUCCION:i                      {: RESULT = new Statments(i); :}
+INSTRUCCIONES ::= INSTRUCCIONES:is INSTRUCCION:i  {: is.add(i); RESULT = is; :}
+                | INSTRUCCION:i                    {: RESULT = new Statments(i); :}
 ;
 
-INSTRUCCION ::= imprimir lparen EXPRESION:e rparen scol              {: RESULT = new Imprimir(e); :}
-              | id:n assign EXPRESION:e scol                          {: RESULT = new Assign(n, e, nleft, nright); :}
-              | id:n inc scol                        {: RESULT = new IncDec(n, '+', nleft, nright); :}
-              | kwBreak:b scol                       {: RESULT = new BreakNode(bleft, bright); :}
-              | kwContinue:c scol                    {: RESULT = new ContinueNode(cleft, cright); :}
-              | IFSTMT:s                             {: RESULT = s; :}
-              | FORSTMT:s                            {: RESULT = s; :}
-              | BLOQUE:b                             {: RESULT = b; :}
-              | id:n plusassign EXPRESION:e scol   {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
-              | id:n minusassign EXPRESION:e scol  {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
-              | error scol                                                {: RESULT = null; :}
-              | rVar id:n TIPO:t assign EXPRESION:e scol  {: RESULT = new VarDecl(n, t, e, nleft, nright); :}
-              | rVar id:n TIPO:t scol                     {: RESULT = new VarDecl(n, t, null, nleft, nright); :}
-              | id:n dassign EXPRESION:e scol             {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
-;
-
-EXPRESION ::= minus EXPRESION:a             {: RESULT = new Negate(a); :}%prec UMENOS
-            | EXPRESION:a plus EXPRESION:b  {: RESULT = new Add(a, b); :}
-            | EXPRESION:a minus EXPRESION:b {: RESULT = new Sub(a, b); :}
-            | EXPRESION:a times EXPRESION:b {: RESULT = new Mul(a, b); :}
-            | EXPRESION:a slash EXPRESION:b {: RESULT = new Div(a, b); :}
-            | lparen EXPRESION:e rparen     {: RESULT = new Paren(e); :}
-            | kwTrue:t                      {: RESULT = new BoolLiteral(true,  tleft, tright); :}
-            | kwFalse:f                     {: RESULT = new BoolLiteral(false, fleft, fright); :}
-            | id:n                          {: RESULT = new VarRef(n, nleft, nright); :}
-            | integer:e                     {: RESULT = new Integers(new Integer(e), eleft, eright); :}
-            | decimal:e                     {: RESULT = new Decimal(new Double(e),   eleft, eright); :}
-            | string:s                      {: RESULT = new StringLiteral(s, sleft, sright); :}
-            | EXPRESION:a percent EXPRESION:b    {: RESULT = new Mod(a, b); :}
-            | EXPRESION:a equal EXPRESION:b      {: RESULT = new Equal(a, b); :}
-            | EXPRESION:a nequal EXPRESION:b     {: RESULT = new NotEqual(a, b); :}
-            | EXPRESION:a less EXPRESION:b       {: RESULT = new Less(a, b); :}
-            | EXPRESION:a lesseq EXPRESION:b     {: RESULT = new LessEqual(a, b); :}
-            | EXPRESION:a greater EXPRESION:b    {: RESULT = new Greater(a, b); :}
-            | EXPRESION:a greatereq EXPRESION:b  {: RESULT = new GreaterEqual(a, b); :}
-            | EXPRESION:a and EXPRESION:b        {: RESULT = new And(a, b); :}
-            | EXPRESION:a or EXPRESION:b         {: RESULT = new Or(a, b); :}
-            | not EXPRESION:a                    {: RESULT = new Not(a); :}
-            | runeLit:r                          {: RESULT = new RuneLiteral(r, rleft, rright); :}
+INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen scol  {: RESULT = new Println(a, fleft, fright); :}
+              | rVar id:n TIPO:t assign EXPRESION:e scol          {: RESULT = new VarDecl(n, t, e, nleft, nright); :}
+              | rVar id:n TIPO:t scol                             {: RESULT = new VarDecl(n, t, null, nleft, nright); :}
+              | id:n dassign EXPRESION:e scol                     {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
+              | id:n assign EXPRESION:e scol                      {: RESULT = new Assign(n, e, nleft, nright); :}
+              | id:n plusassign EXPRESION:e scol                  {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
+              | id:n minusassign EXPRESION:e scol                 {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
+              | id:n inc scol                                     {: RESULT = new IncDec(n, '+', nleft, nright); :}
+              | kwBreak:b scol                                    {: RESULT = new BreakNode(bleft, bright); :}
+              | kwContinue:c scol                                 {: RESULT = new ContinueNode(cleft, cright); :}
+              | IFSTMT:s                                          {: RESULT = s; :}
+              | FORSTMT:s                                         {: RESULT = s; :}
+              | BLOQUE:b                                          {: RESULT = b; :}
+              | error scol                                        {: RESULT = null; :}
 ;
 
 BLOQUE ::= lbrace INSTRUCCIONES:is rbrace  {: RESULT = new Bloque(is); :}
@@ -128,11 +104,19 @@ FORSTMT ::= kwFor EXPRESION:c BLOQUE:b
                 {: RESULT = new ForNode(i, c, p, b); :}
 ;
 
-FOR_SIMPLE ::= id:n dassign EXPRESION:e    {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
-             | id:n assign EXPRESION:e      {: RESULT = new Assign(n, e, nleft, nright); :}
-             | id:n plusassign EXPRESION:e  {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
-             | id:n minusassign EXPRESION:e {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
-             | id:n inc                      {: RESULT = new IncDec(n, '+', nleft, nright); :}
+FOR_SIMPLE ::= id:n dassign EXPRESION:e     {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
+             | id:n assign EXPRESION:e       {: RESULT = new Assign(n, e, nleft, nright); :}
+             | id:n plusassign EXPRESION:e   {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
+             | id:n minusassign EXPRESION:e  {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
+             | id:n inc                       {: RESULT = new IncDec(n, '+', nleft, nright); :}
+;
+
+ARGS ::= LISTA_EXPR:l  {: RESULT = l; :}
+       |               {: RESULT = new ArrayList<>(); :}
+;
+
+LISTA_EXPR ::= LISTA_EXPR:l comma EXPRESION:e  {: l.add(e); RESULT = l; :}
+             | EXPRESION:e                      {: List<ASTNode> nl = new ArrayList<>(); nl.add(e); RESULT = nl; :}
 ;
 
 TIPO ::= tipoInt    {: RESULT = GoliteType.INT; :}
@@ -140,4 +124,33 @@ TIPO ::= tipoInt    {: RESULT = GoliteType.INT; :}
        | tipoString {: RESULT = GoliteType.STRING; :}
        | tipoBool   {: RESULT = GoliteType.BOOL; :}
        | tipoRune   {: RESULT = GoliteType.RUNE; :}
+;
+
+EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %prec UMENOS
+            | not EXPRESION:a                   {: RESULT = new Not(a); :}
+            | EXPRESION:a plus EXPRESION:b      {: RESULT = new Add(a, b); :}
+            | EXPRESION:a minus EXPRESION:b     {: RESULT = new Sub(a, b); :}
+            | EXPRESION:a times EXPRESION:b     {: RESULT = new Mul(a, b); :}
+            | EXPRESION:a slash EXPRESION:b     {: RESULT = new Div(a, b); :}
+            | EXPRESION:a percent EXPRESION:b   {: RESULT = new Mod(a, b); :}
+            | EXPRESION:a equal EXPRESION:b     {: RESULT = new Equal(a, b); :}
+            | EXPRESION:a nequal EXPRESION:b    {: RESULT = new NotEqual(a, b); :}
+            | EXPRESION:a less EXPRESION:b      {: RESULT = new Less(a, b); :}
+            | EXPRESION:a lesseq EXPRESION:b    {: RESULT = new LessEqual(a, b); :}
+            | EXPRESION:a greater EXPRESION:b   {: RESULT = new Greater(a, b); :}
+            | EXPRESION:a greatereq EXPRESION:b {: RESULT = new GreaterEqual(a, b); :}
+            | EXPRESION:a and EXPRESION:b       {: RESULT = new And(a, b); :}
+            | EXPRESION:a or EXPRESION:b        {: RESULT = new Or(a, b); :}
+            | lparen EXPRESION:e rparen         {: RESULT = new Paren(e); :}
+            | pkgStrconv dot mAtoi lparen EXPRESION:e rparen        {: RESULT = new Atoi(e, eleft, eright); :}
+            | pkgStrconv dot mParseFloat lparen EXPRESION:e rparen  {: RESULT = new ParseFloat(e, eleft, eright); :}
+            | pkgReflect dot mTypeOf lparen EXPRESION:e rparen      {: RESULT = new TypeOf(e, eleft, eright); :}
+            | pkgReflect dot mTypeOf lparen EXPRESION:e rparen dot tipoString  {: RESULT = new TypeOf(e, eleft, eright); :}
+            | kwTrue:t                          {: RESULT = new BoolLiteral(true, tleft, tright); :}
+            | kwFalse:f                         {: RESULT = new BoolLiteral(false, fleft, fright); :}
+            | id:n                              {: RESULT = new VarRef(n, nleft, nright); :}
+            | integer:e                         {: RESULT = new Integers(Integer.parseInt(e), eleft, eright); :}
+            | decimal:e                         {: RESULT = new Decimal(Double.parseDouble(e), eleft, eright); :}
+            | string:s                          {: RESULT = new StringLiteral(s, sleft, sright); :}
+            | runeLit:r                         {: RESULT = new RuneLiteral(r, rleft, rright); :}
 ;
