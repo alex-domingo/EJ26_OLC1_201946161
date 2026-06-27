@@ -33,4 +33,8 @@ public class Statments implements ASTNode {
     public <T> T accept(olc1.golite.visitor.Visitor<T> visitor) {
         return visitor.visit(new Context(this));
     }
+
+    public List<ASTNode> getStatements() {
+        return statements;
+    }
 }

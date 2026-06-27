@@ -1,5 +1,12 @@
 package olc1.golite.visitor.interpreter;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import olc1.golite.ast.ASTNode;
 import olc1.golite.ast.exp.*;
 import olc1.golite.ast.stm.*;
@@ -11,16 +18,125 @@ import olc1.golite.symbols.SymbolEntry;
 import olc1.golite.visitor.Visitor;
 import olc1.golite.visitor.interpreter.control.BreakSignal;
 import olc1.golite.visitor.interpreter.control.ContinueSignal;
+import olc1.golite.visitor.interpreter.control.ReturnSignal;
 import olc1.golite.visitor.interpreter.value.*;
 
 public class InterpreterVisitor implements Visitor<ValueWrapper> {
 
     public String output = "";
     private final ValueWrapper defaultVoid = new VoidValue(-1, -1);
-    private Environment currentEnv = new Environment(null); // ambito global
+
+    // ambito global (raiz de la cadena de ambitos)
+    private final Environment globalEnv = new Environment(null);
+    // ambito actual durante la ejecucion
+    private Environment currentEnv = globalEnv;
+    // tabla de funciones declaradas en el ambito global
+    private final Map<String, FuncDecl> functions = new HashMap<>();
 
     public ValueWrapper Visit(ASTNode node) {
         return node.accept(this);
+    }
+
+    // ===== Punto de entrada del interprete =====
+    public void interpret(ASTNode root) {
+        List<ASTNode> top;
+        if (root instanceof Statments s) {
+            top = s.getStatements();
+        } else {
+            top = new ArrayList<>();
+            top.add(root);
+        }
+
+        // Pasada 1: registramos (hoisting) todas las funciones, asi se puede
+        // llamar a una funcion declarada mas abajo en el archivo
+        for (ASTNode node : top) {
+            if (node instanceof FuncDecl fd) {
+                registerFunction(fd);
+            }
+        }
+
+        // Pasada 2: ejecutamos las sentencias del nivel global (variables globales
+        // y sentencias sueltas), saltando las declaraciones de funcion
+        for (ASTNode node : top) {
+            if (!(node instanceof FuncDecl)) {
+                Visit(node);
+            }
+        }
+
+        // si existe una funcion main, es el punto de entrada
+        if (functions.containsKey("main")) {
+            callFunction("main", new ArrayList<>(), -1, -1);
+        }
+    }
+
+    private void registerFunction(FuncDecl fd) {
+        // no pueden existir dos funciones con el mismo nombre
+        if (functions.containsKey(fd.getName())) {
+            throw semantic("La funcion '" + fd.getName() + "' ya fue declarada", fd.getLine(), fd.getColumn());
+        }
+        // los parametros no pueden repetir nombre
+        Set<String> vistos = new HashSet<>();
+        for (Param p : fd.getParams()) {
+            if (!vistos.add(p.name)) {
+                throw semantic("El parametro '" + p.name + "' esta repetido en la funcion '" + fd.getName() + "'",
+                        p.line, p.column);
+            }
+        }
+        functions.put(fd.getName(), fd);
+    }
+
+    // ejecuta una funcion: crea su ambito, vincula parametros, corre el cuerpo y maneja el return
+    private ValueWrapper callFunction(String name, List<ValueWrapper> argValues, int line, int column) {
+        FuncDecl fn = functions.get(name);
+        if (fn == null) {
+            throw semantic("La funcion '" + name + "' no esta definida", line, column);
+        }
+        if (argValues.size() != fn.getParams().size()) {
+            throw semantic("La funcion '" + name + "' esperaba " + fn.getParams().size()
+                    + " argumento(s) pero recibio " + argValues.size(), line, column);
+        }
+
+        // el ambito de la funcion cuelga del GLOBAL, no del llamador
+        Environment fnEnv = new Environment(globalEnv);
+        for (int i = 0; i < fn.getParams().size(); i++) {
+            Param p = fn.getParams().get(i);
+            ValueWrapper arg = checkAndConvert(p.type, argValues.get(i), p.line, p.column);
+            fnEnv.declare(new SymbolEntry(p.name, p.type, arg, p.line, p.column));
+        }
+
+        Environment prev = currentEnv;
+        currentEnv = fnEnv;
+        boolean returned = false;
+        ValueWrapper result = defaultVoid;
+        try {
+            if (fn.getBody() != null) {
+                Visit(fn.getBody());
+            }
+        } catch (ReturnSignal rs) {
+            returned = true;
+            if (fn.getReturnType() == null) {
+                // funcion sin tipo de retorno: no puede devolver un valor
+                if (rs.hasValue()) {
+                    throw semantic("La funcion '" + name + "' no declara tipo de retorno y no puede retornar un valor",
+                            rs.getLine(), rs.getColumn());
+                }
+            } else {
+                if (!rs.hasValue()) {
+                    throw semantic("La funcion '" + name + "' debe retornar un valor de tipo " + fn.getReturnType().getLabel(),
+                            rs.getLine(), rs.getColumn());
+                }
+                result = checkAndConvert(fn.getReturnType(), rs.getValue(), rs.getLine(), rs.getColumn());
+            }
+        } finally {
+            currentEnv = prev;
+        }
+
+        // funcion con tipo de retorno que termino sin ejecutar un return
+        if (!returned && fn.getReturnType() != null) {
+            throw semantic("La funcion '" + name + "' debe retornar un valor de tipo " + fn.getReturnType().getLabel(),
+                    line, column);
+        }
+        return result;
     }
 
     // ===== Helpers de error =====
@@ -50,12 +166,10 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         };
     }
 
-    // numerico = int o float64
     private boolean esNumerico(ValueWrapper v) {
         return v instanceof IntValue || v instanceof DecimalValue;
     }
 
-    // pasamos cualquier numerico a double para operar/comparar mezclando int y float64
     private double aDouble(ValueWrapper v) {
         if (v instanceof IntValue i) {
             return i.value();
@@ -94,7 +208,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                 + " a una variable de tipo " + declared.getLabel(), line, column);
     }
 
-    // ===== Aritmetica (en helpers para reusarla en +=, -= e i++) =====
+    // ===== Aritmetica (helpers reusados en +=, -= e i++) =====
     private ValueWrapper sumar(ValueWrapper l, ValueWrapper r) {
         return switch (l) {
             case IntValue a when r instanceof IntValue b ->
@@ -105,7 +219,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                 new DecimalValue(a.value() + b.value(), a.line(), a.column());
             case DecimalValue a when r instanceof DecimalValue b ->
                 new DecimalValue(a.value() + b.value(), a.line(), a.column());
-            // las cadenas se concatenan con +
             case StringValue a when r instanceof StringValue b ->
                 new StringValue(a.value() + b.value(), a.line(), a.column());
             default ->
@@ -144,7 +257,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     private ValueWrapper dividir(ValueWrapper l, ValueWrapper r) {
-        // revisamos division entre cero antes de operar
         if (esNumerico(r) && aDouble(r) == 0.0) {
             throw semantic("No se puede dividir entre cero", r);
         }
@@ -163,7 +275,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     private ValueWrapper modulo(ValueWrapper l, ValueWrapper r) {
-        // el modulo solo aplica entre enteros
         if (l instanceof IntValue a && r instanceof IntValue b) {
             if (b.value() == 0) {
                 throw semantic("No se puede aplicar modulo entre cero", r);
@@ -174,7 +285,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     // ===== Comparaciones =====
-    // igualdad: numericos (mezclando int/float), bool, string y rune
     private boolean sonIguales(ValueWrapper a, ValueWrapper b) {
         if (esNumerico(a) && esNumerico(b)) {
             return aDouble(a) == aDouble(b);
@@ -191,7 +301,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         throw semantic("No se pueden comparar los tipos " + a.getTypeName() + " y " + b.getTypeName(), a);
     }
 
-    // orden (< <= > >=): solo numericos y runes (los runes por su valor ASCII)
     private double compararOrden(ValueWrapper a, ValueWrapper b) {
         if (esNumerico(a) && esNumerico(b)) {
             return aDouble(a) - aDouble(b);
@@ -203,7 +312,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     // ===== Helpers de strings y runes =====
-    // procesa las secuencias de escape dentro de una cadena
     private String procesarEscapes(String s) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < s.length(); i++) {
@@ -226,7 +334,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                         sb.append(sig);
                     }
                 }
-                i++; // ya consumimos el caracter que seguia a la barra
+                i++;
             } else {
                 sb.append(c);
             }
@@ -234,13 +342,12 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         return sb.toString();
     }
 
-    // convierte el lexema de un rune ('A', '\n', ...) en su codigo de caracter
     private int parseRune(String lexeme) {
-        String inner = lexeme.substring(1, lexeme.length() - 1); // quitamos las comillas simples
+        String inner = lexeme.substring(1, lexeme.length() - 1);
         if (inner.length() == 1) {
             return inner.charAt(0);
         }
-        char esc = inner.charAt(1); // es un escape como \n
+        char esc = inner.charAt(1);
         return switch (esc) {
             case 'n' ->
                 '\n';
@@ -275,7 +382,6 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
 
     @Override
     public ValueWrapper visit(StringLiteral.Context ctx) {
-        // el lexema viene con comillas dobles; las quitamos y procesamos los escapes
         String raw = ctx.value;
         String content = (raw.length() >= 2) ? raw.substring(1, raw.length() - 1) : raw;
         return new StringValue(procesarEscapes(content), ctx.line, ctx.column);
@@ -403,86 +509,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         throw semantic("El operador ! requiere una expresion booleana", v);
     }
 
-    // ===== Variables =====
-    @Override
-    public ValueWrapper visit(VarDecl.Context ctx) {
-        ValueWrapper value;
-        GoliteType declared = ctx.declaredType;
-
-        if (ctx.value != null) {
-            ValueWrapper evaluated = Visit(ctx.value);
-            if (declared == null) {
-                // x := e  -> el tipo se infiere del valor
-                declared = typeOf(evaluated);
-                value = evaluated;
-            } else {
-                // var x T = e  -> validamos y convertimos si aplica
-                value = checkAndConvert(declared, evaluated, ctx.line, ctx.column);
-            }
-        } else {
-            // var x T  -> toma el valor por defecto del tipo
-            value = defaultValue(declared, ctx.line, ctx.column);
-        }
-
-        currentEnv.declare(new SymbolEntry(ctx.name, declared, value, ctx.line, ctx.column));
-        return defaultVoid;
-    }
-
-    @Override
-    public ValueWrapper visit(VarRef.Context ctx) {
-        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
-        return entry.getValue();
-    }
-
-    @Override
-    public ValueWrapper visit(Assign.Context ctx) {
-        ValueWrapper value = Visit(ctx.value);
-        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
-        ValueWrapper converted = checkAndConvert(entry.getType(), value, ctx.line, ctx.column);
-        entry.setValue(converted);
-        return defaultVoid;
-    }
-
-    @Override
-    public ValueWrapper visit(CompoundAssign.Context ctx) {
-        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
-        ValueWrapper actual = entry.getValue();
-        ValueWrapper rhs = Visit(ctx.value);
-
-        // += es como variable = variable + expr, y -= igual con la resta
-        ValueWrapper resultado = (ctx.op == '+') ? sumar(actual, rhs) : restar(actual, rhs);
-        ValueWrapper convertido = checkAndConvert(entry.getType(), resultado, ctx.line, ctx.column);
-        entry.setValue(convertido);
-        return defaultVoid;
-    }
-
-    @Override
-    public ValueWrapper visit(IncDec.Context ctx) {
-        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
-        ValueWrapper actual = entry.getValue();
-        ValueWrapper uno = new IntValue(1, ctx.line, ctx.column);
-
-        // i++ equivale a i = i + 1
-        ValueWrapper resultado = (ctx.op == '+') ? sumar(actual, uno) : restar(actual, uno);
-        ValueWrapper convertido = checkAndConvert(entry.getType(), resultado, ctx.line, ctx.column);
-        entry.setValue(convertido);
-        return defaultVoid;
-    }
-
-    // ===== Sentencias =====
-    @Override
-    public ValueWrapper visit(Println.Context ctx) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < ctx.args.size(); i++) {
-            if (i > 0) {
-                sb.append(" ");
-            }
-            sb.append(Visit(ctx.args.get(i)).toString());
-        }
-        output += sb.toString() + "\n";
-        return defaultVoid;
-    }
-
+    // ===== Embebidas =====
     @Override
     public ValueWrapper visit(Atoi.Context ctx) {
         ValueWrapper v = Visit(ctx.expression);
@@ -513,6 +540,95 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     public ValueWrapper visit(TypeOf.Context ctx) {
         ValueWrapper v = Visit(ctx.expression);
         return new StringValue(typeOf(v).getLabel(), ctx.line, ctx.column);
+    }
+
+    // ===== Llamada a funcion =====
+    @Override
+    public ValueWrapper visit(Call.Context ctx) {
+        // los argumentos se evaluan en el ambito del llamador
+        List<ValueWrapper> args = new ArrayList<>();
+        for (ASTNode a : ctx.args) {
+            args.add(Visit(a));
+        }
+        return callFunction(ctx.name, args, ctx.line, ctx.column);
+    }
+
+    // ===== Variables =====
+    @Override
+    public ValueWrapper visit(VarDecl.Context ctx) {
+        // en el ambito global una variable no puede llamarse igual que una funcion
+        if (currentEnv == globalEnv && functions.containsKey(ctx.name)) {
+            throw semantic("Ya existe una funcion con el nombre '" + ctx.name + "'", ctx.line, ctx.column);
+        }
+
+        ValueWrapper value;
+        GoliteType declared = ctx.declaredType;
+
+        if (ctx.value != null) {
+            ValueWrapper evaluated = Visit(ctx.value);
+            if (declared == null) {
+                declared = typeOf(evaluated);
+                value = evaluated;
+            } else {
+                value = checkAndConvert(declared, evaluated, ctx.line, ctx.column);
+            }
+        } else {
+            value = defaultValue(declared, ctx.line, ctx.column);
+        }
+
+        currentEnv.declare(new SymbolEntry(ctx.name, declared, value, ctx.line, ctx.column));
+        return defaultVoid;
+    }
+
+    @Override
+    public ValueWrapper visit(VarRef.Context ctx) {
+        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
+        return entry.getValue();
+    }
+
+    @Override
+    public ValueWrapper visit(Assign.Context ctx) {
+        ValueWrapper value = Visit(ctx.value);
+        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
+        ValueWrapper converted = checkAndConvert(entry.getType(), value, ctx.line, ctx.column);
+        entry.setValue(converted);
+        return defaultVoid;
+    }
+
+    @Override
+    public ValueWrapper visit(CompoundAssign.Context ctx) {
+        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
+        ValueWrapper actual = entry.getValue();
+        ValueWrapper rhs = Visit(ctx.value);
+        ValueWrapper resultado = (ctx.op == '+') ? sumar(actual, rhs) : restar(actual, rhs);
+        ValueWrapper convertido = checkAndConvert(entry.getType(), resultado, ctx.line, ctx.column);
+        entry.setValue(convertido);
+        return defaultVoid;
+    }
+
+    @Override
+    public ValueWrapper visit(IncDec.Context ctx) {
+        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
+        ValueWrapper actual = entry.getValue();
+        ValueWrapper uno = new IntValue(1, ctx.line, ctx.column);
+        ValueWrapper resultado = (ctx.op == '+') ? sumar(actual, uno) : restar(actual, uno);
+        ValueWrapper convertido = checkAndConvert(entry.getType(), resultado, ctx.line, ctx.column);
+        entry.setValue(convertido);
+        return defaultVoid;
+    }
+
+    // ===== Sentencias =====
+    @Override
+    public ValueWrapper visit(Println.Context ctx) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ctx.args.size(); i++) {
+            if (i > 0) {
+                sb.append(" ");
+            }
+            sb.append(Visit(ctx.args.get(i)).toString());
+        }
+        output += sb.toString() + "\n";
+        return defaultVoid;
     }
 
     @Override
@@ -548,7 +664,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                 try {
                     Visit(ctx.body);
                 } catch (ContinueSignal cs) {
-                    // continue: seguimos al post y la siguiente iteracion
+                    // continue: pasamos al post y la siguiente iteracion
                 } catch (BreakSignal bs) {
                     break;
                 }
@@ -560,6 +676,39 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
             currentEnv = previo;
         }
         return defaultVoid;
+    }
+
+    @Override
+    public ValueWrapper visit(SwitchNode.Context ctx) {
+        ValueWrapper sv = Visit(ctx.expression);
+        try {
+            for (CaseClause c : ctx.cases) {
+                ValueWrapper cv = Visit(c.value);
+                if (sonIguales(sv, cv)) {
+                    ejecutarCuerpoCase(c.body);
+                    return defaultVoid; // break implicito: no hay fall-through
+                }
+            }
+            if (ctx.defaultBody != null) {
+                ejecutarCuerpoCase(ctx.defaultBody);
+            }
+        } catch (BreakSignal bs) {
+            // un break dentro del switch simplemente lo termina
+        }
+        return defaultVoid;
+    }
+
+    private void ejecutarCuerpoCase(ASTNode body) {
+        if (body == null) {
+            return;
+        }
+        Environment previo = currentEnv;
+        currentEnv = new Environment(previo);
+        try {
+            Visit(body);
+        } finally {
+            currentEnv = previo;
+        }
     }
 
     @Override
@@ -587,47 +736,22 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     @Override
+    public ValueWrapper visit(ReturnNode.Context ctx) {
+        ValueWrapper v = (ctx.expression != null) ? Visit(ctx.expression) : null;
+        throw new ReturnSignal(v, ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(FuncDecl.Context ctx) {
+        // si llegamos aqui ejecutando, la funcion esta anidada (no en el global)
+        throw semantic("Las funciones solo pueden declararse en el ambito global", ctx.line, ctx.column);
+    }
+
+    @Override
     public ValueWrapper visit(Statments.Context ctx) {
         for (ASTNode statment : ctx.statements) {
             Visit(statment);
         }
         return defaultVoid;
-    }
-
-    @Override
-    public ValueWrapper visit(SwitchNode.Context ctx) {
-        ValueWrapper sv = Visit(ctx.expression);
-        try {
-            // recorremos los case en orden y ejecutamos el primero que coincida
-            for (CaseClause c : ctx.cases) {
-                ValueWrapper cv = Visit(c.value);
-                if (sonIguales(sv, cv)) {
-                    ejecutarCuerpoCase(c.body);
-                    return defaultVoid; // break implicito: no hay fall-through
-                }
-            }
-            // si ningun case coincidio, ejecutamos el default (si existe)
-            if (ctx.defaultBody != null) {
-                ejecutarCuerpoCase(ctx.defaultBody);
-            }
-        } catch (BreakSignal bs) {
-            // un break dentro del switch simplemente lo termina
-            // (el continue NO se atrapa aqui: pertenece al for que lo contenga)
-        }
-        return defaultVoid;
-    }
-
-    // ejecuta el cuerpo de un case en su propio ambito
-    private void ejecutarCuerpoCase(ASTNode body) {
-        if (body == null) {
-            return;
-        }
-        Environment previo = currentEnv;
-        currentEnv = new Environment(previo);
-        try {
-            Visit(body);
-        } finally {
-            currentEnv = previo;
-        }
     }
 }

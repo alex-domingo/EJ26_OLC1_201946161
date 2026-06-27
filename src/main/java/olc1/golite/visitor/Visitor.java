@@ -58,6 +58,9 @@ public interface Visitor<T> {
 
     T visit(TypeOf.Context ctx);
 
+    // Llamada a funcion
+    T visit(Call.Context ctx);
+
     // Variables
     T visit(VarRef.Context ctx);
 
@@ -74,15 +77,19 @@ public interface Visitor<T> {
 
     T visit(IfNode.Context ctx);
 
-    T visit(SwitchNode.Context ctx);
-
     T visit(ForNode.Context ctx);
+
+    T visit(SwitchNode.Context ctx);
 
     T visit(Bloque.Context ctx);
 
     T visit(BreakNode.Context ctx);
 
     T visit(ContinueNode.Context ctx);
+
+    T visit(ReturnNode.Context ctx);
+
+    T visit(FuncDecl.Context ctx);
 
     T visit(Statments.Context ctx);
 }

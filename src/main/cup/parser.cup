@@ -9,6 +9,7 @@ import java_cup.runtime.Symbol;
 import olc1.golite.ast.ASTNode;
 import olc1.golite.ast.exp.*;
 import olc1.golite.ast.stm.*;
+import olc1.golite.ast.stm.Param;
 import olc1.golite.symbols.GoliteType;
 import olc1.golite.reports.GoliteError;
 
@@ -45,8 +46,11 @@ terminal pkgFmt, mPrintln;
 terminal pkgStrconv, mAtoi, mParseFloat;
 terminal pkgReflect, mTypeOf;
 
-// Nuevos terminales
+// Terminales para switch
 terminal kwSwitch, kwCase, kwDefault, colon;
+
+// Terminales para funciones
+terminal kwFunc, kwReturn;
 
 // ===== No terminales =====
 nonterminal Statments INICIO, INSTRUCCIONES;
@@ -57,12 +61,21 @@ nonterminal ASTNode BLOQUE, IFSTMT, FORSTMT, FOR_SIMPLE;
 nonterminal List<ASTNode> ARGS, LISTA_EXPR;
 nonterminal PUNTOCOMA;
 
-// Nuevos no terminales
+// No terminales para switch
 nonterminal ASTNode SWITCHSTMT;
 nonterminal List<CaseClause> CASES;
 nonterminal CaseClause CASE;
 nonterminal Statments CASE_BODY;
 nonterminal ASTNode DEFAULTOPT;
+
+// No terminales para funciones
+nonterminal ASTNode FUNCDECL;
+nonterminal List<Param> PARAMS, LISTA_PARAMS;
+nonterminal Param PARAM;
+nonterminal ASTNode RETURNSTMT;
+
+// Nuevo no-terminal para acceso (variable o llamada)
+nonterminal ASTNode ACCESO;
 
 // ===== Precedencia (de menor a mayor) =====
 precedence left or;
@@ -84,6 +97,7 @@ INSTRUCCIONES ::= INSTRUCCIONES:is INSTRUCCION:i  {: is.add(i); RESULT = is; :}
                 | INSTRUCCION:i                    {: RESULT = new Statments(i); :}
 ;
 
+// PUNTOCOMA opcional (versión original con alternativa vacía)
 PUNTOCOMA ::= scol
             |
 ;
@@ -102,6 +116,9 @@ INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen PUNTOCOMA  {: RESULT 
               | FORSTMT:s                                              {: RESULT = s; :}
               | BLOQUE:b                                               {: RESULT = b; :}
               | SWITCHSTMT:s                                           {: RESULT = s; :}
+              | FUNCDECL:f                                             {: RESULT = f; :}
+              | RETURNSTMT:r                                           {: RESULT = r; :}
+              | id:n lparen ARGS:a rparen PUNTOCOMA  {: RESULT = new Call(n, a, nleft, nright); :}   // <--- NUEVA ALTERNATIVA
               | error scol                                             {: RESULT = null; :}
 ;
 
@@ -162,13 +179,18 @@ EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %p
             | pkgStrconv dot mParseFloat lparen EXPRESION:e rparen  {: RESULT = new ParseFloat(e, eleft, eright); :}
             | pkgReflect dot mTypeOf lparen EXPRESION:e rparen      {: RESULT = new TypeOf(e, eleft, eright); :}
             | pkgReflect dot mTypeOf lparen EXPRESION:e rparen dot tipoString  {: RESULT = new TypeOf(e, eleft, eright); :}
+            | ACCESO:a                      {: RESULT = a; :}
             | kwTrue:t                          {: RESULT = new BoolLiteral(true, tleft, tright); :}
             | kwFalse:f                         {: RESULT = new BoolLiteral(false, fleft, fright); :}
-            | id:n                              {: RESULT = new VarRef(n, nleft, nright); :}
             | integer:e                         {: RESULT = new Integers(Integer.parseInt(e), eleft, eright); :}
             | decimal:e                         {: RESULT = new Decimal(Double.parseDouble(e), eleft, eright); :}
             | string:s                          {: RESULT = new StringLiteral(s, sleft, sright); :}
             | runeLit:r                         {: RESULT = new RuneLiteral(r, rleft, rright); :}
+;
+
+// Producción para ACCESO (variable o llamada a función)
+ACCESO ::= id:n lparen ARGS:a rparen  {: RESULT = new Call(n, a, nleft, nright); :}
+         | id:n                        {: RESULT = new VarRef(n, nleft, nright); :}
 ;
 
 // Producciones para switch
@@ -189,4 +211,26 @@ CASE_BODY ::= INSTRUCCIONES:is  {: RESULT = is; :}
 
 DEFAULTOPT ::= kwDefault colon CASE_BODY:b  {: RESULT = b; :}
              |                               {: RESULT = null; :}
+;
+
+// Producciones para funciones
+FUNCDECL ::= kwFunc id:n lparen PARAMS:p rparen TIPO:t BLOQUE:b
+                {: RESULT = new FuncDecl(n, p, t, b, nleft, nright); :}
+           | kwFunc id:n lparen PARAMS:p rparen BLOQUE:b
+                {: RESULT = new FuncDecl(n, p, null, b, nleft, nright); :}
+;
+
+PARAMS ::= LISTA_PARAMS:l  {: RESULT = l; :}
+         |                  {: RESULT = new ArrayList<>(); :}
+;
+
+LISTA_PARAMS ::= LISTA_PARAMS:l comma PARAM:p  {: l.add(p); RESULT = l; :}
+               | PARAM:p                        {: List<Param> nl = new ArrayList<>(); nl.add(p); RESULT = nl; :}
+;
+
+PARAM ::= id:n TIPO:t  {: RESULT = new Param(n, t, nleft, nright); :}
+;
+
+RETURNSTMT ::= kwReturn:r EXPRESION:e PUNTOCOMA  {: RESULT = new ReturnNode(e, rleft, rright); :}
+             | kwReturn:r PUNTOCOMA               {: RESULT = new ReturnNode(null, rleft, rright); :}
 ;
