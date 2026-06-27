@@ -91,6 +91,7 @@ rune_escape = \\ [\'\\nrt]
 ";"     { return tok(sym.scol,    "punto_coma"); }
 ","     { return tok(sym.comma,   "coma"); }
 "."     { return tok(sym.dot,     "punto"); }
+":"     { return tok(sym.colon,   "dos_puntos"); }
 
 // Palabras reservadas (antes de la regla de id)
 "var"      { return tok(sym.rVar,       "reservada"); }
@@ -106,6 +107,9 @@ rune_escape = \\ [\'\\nrt]
 "for"      { return tok(sym.kwFor,      "reservada"); }
 "break"    { return tok(sym.kwBreak,    "reservada"); }
 "continue" { return tok(sym.kwContinue, "reservada"); }
+"switch"   { return tok(sym.kwSwitch,   "reservada"); }
+"case"     { return tok(sym.kwCase,     "reservada"); }
+"default"  { return tok(sym.kwDefault,  "reservada"); }
 
 // Funciones embebidas: paquete y metodo
 "fmt"        { return tok(sym.pkgFmt,      "paquete"); }

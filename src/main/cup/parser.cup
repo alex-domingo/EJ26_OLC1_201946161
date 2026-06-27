@@ -45,6 +45,9 @@ terminal pkgFmt, mPrintln;
 terminal pkgStrconv, mAtoi, mParseFloat;
 terminal pkgReflect, mTypeOf;
 
+// Nuevos terminales
+terminal kwSwitch, kwCase, kwDefault, colon;
+
 // ===== No terminales =====
 nonterminal Statments INICIO, INSTRUCCIONES;
 nonterminal ASTNode INSTRUCCION;
@@ -53,6 +56,13 @@ nonterminal GoliteType TIPO;
 nonterminal ASTNode BLOQUE, IFSTMT, FORSTMT, FOR_SIMPLE;
 nonterminal List<ASTNode> ARGS, LISTA_EXPR;
 nonterminal PUNTOCOMA;
+
+// Nuevos no terminales
+nonterminal ASTNode SWITCHSTMT;
+nonterminal List<CaseClause> CASES;
+nonterminal CaseClause CASE;
+nonterminal Statments CASE_BODY;
+nonterminal ASTNode DEFAULTOPT;
 
 // ===== Precedencia (de menor a mayor) =====
 precedence left or;
@@ -91,6 +101,7 @@ INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen PUNTOCOMA  {: RESULT 
               | IFSTMT:s                                               {: RESULT = s; :}
               | FORSTMT:s                                              {: RESULT = s; :}
               | BLOQUE:b                                               {: RESULT = b; :}
+              | SWITCHSTMT:s                                           {: RESULT = s; :}
               | error scol                                             {: RESULT = null; :}
 ;
 
@@ -158,4 +169,24 @@ EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %p
             | decimal:e                         {: RESULT = new Decimal(Double.parseDouble(e), eleft, eright); :}
             | string:s                          {: RESULT = new StringLiteral(s, sleft, sright); :}
             | runeLit:r                         {: RESULT = new RuneLiteral(r, rleft, rright); :}
+;
+
+// Producciones para switch
+SWITCHSTMT ::= kwSwitch EXPRESION:e lbrace CASES:cs DEFAULTOPT:d rbrace
+                {: RESULT = new SwitchNode(e, cs, d, eleft, eright); :}
+;
+
+CASES ::= CASES:cs CASE:c   {: cs.add(c); RESULT = cs; :}
+        |                    {: RESULT = new ArrayList<>(); :}
+;
+
+CASE ::= kwCase EXPRESION:v colon CASE_BODY:b  {: RESULT = new CaseClause(v, b); :}
+;
+
+CASE_BODY ::= INSTRUCCIONES:is  {: RESULT = is; :}
+            |                    {: RESULT = null; :}
+;
+
+DEFAULTOPT ::= kwDefault colon CASE_BODY:b  {: RESULT = b; :}
+             |                               {: RESULT = null; :}
 ;
