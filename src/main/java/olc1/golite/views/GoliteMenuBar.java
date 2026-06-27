@@ -1,95 +1,100 @@
 package olc1.golite.views;
 
-import javax.swing.*;
-import java.awt.*;
 import java.awt.event.ActionListener;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
+import javax.swing.KeyStroke;
 
 public class GoliteMenuBar extends JMenuBar {
 
-    private final JMenuItem newItem;
-    private final JMenuItem exitItem;
-    private final JButton runButton;
-    private final JButton cleanButton;
-    private final JMenuItem tokensItem;
-    private final JMenuItem errorsItem;
-    private final JMenuItem aboutItem;
+    private final JMenuItem itemNuevo = new JMenuItem("Nuevo");
+    private final JMenuItem itemAbrir = new JMenuItem("Abrir...");
+    private final JMenuItem itemGuardar = new JMenuItem("Guardar");
+    private final JMenuItem itemGuardarComo = new JMenuItem("Guardar como...");
+    private final JMenuItem itemSalir = new JMenuItem("Salir");
+
+    private final JMenuItem itemEjecutar = new JMenuItem("Ejecutar");
+    private final JMenuItem itemLimpiar = new JMenuItem("Limpiar consola");
+
+    private final JMenuItem itemTokens = new JMenuItem("Reporte de tokens");
+    private final JMenuItem itemErrores = new JMenuItem("Reporte de errores");
+
+    private final JMenuItem itemAcerca = new JMenuItem("Acerca de");
 
     public GoliteMenuBar() {
-        JMenu fileMenu = new JMenu("Archivo");
-        runButton = createButton("Ejecutar");
-        JMenu reportMenu = new JMenu("Reportes");
-        cleanButton = createButton("Limpiar consola");
-        JMenu helpMenu = new JMenu("Ayuda");
+        // Menu Archivo
+        JMenu menuArchivo = new JMenu("Archivo");
+        itemNuevo.setAccelerator(KeyStroke.getKeyStroke("control N"));
+        itemAbrir.setAccelerator(KeyStroke.getKeyStroke("control O"));
+        itemGuardar.setAccelerator(KeyStroke.getKeyStroke("control S"));
+        menuArchivo.add(itemNuevo);
+        menuArchivo.add(itemAbrir);
+        menuArchivo.add(itemGuardar);
+        menuArchivo.add(itemGuardarComo);
+        menuArchivo.addSeparator();
+        menuArchivo.add(itemSalir);
 
-        newItem = new JMenuItem("Nuevo");
-        exitItem = new JMenuItem("Salir");
-        fileMenu.add(newItem);
-        fileMenu.addSeparator();
-        fileMenu.add(exitItem);
+        // Menu Ejecutar
+        JMenu menuEjecutar = new JMenu("Ejecutar");
+        itemEjecutar.setAccelerator(KeyStroke.getKeyStroke("F5"));
+        menuEjecutar.add(itemEjecutar);
+        menuEjecutar.add(itemLimpiar);
 
-        tokensItem = new JMenuItem("Reporte de tokens");
-        errorsItem = new JMenuItem("Reporte de errores");
-        reportMenu.add(tokensItem);
-        reportMenu.add(errorsItem);
+        // Menu Reportes
+        JMenu menuReportes = new JMenu("Reportes");
+        menuReportes.add(itemTokens);
+        menuReportes.add(itemErrores);
 
-        aboutItem = new JMenuItem("Acerca de");
-        helpMenu.add(aboutItem);
+        // Menu Ayuda
+        JMenu menuAyuda = new JMenu("Ayuda");
+        menuAyuda.add(itemAcerca);
 
-        add(fileMenu);
-        add(runButton);
-        add(reportMenu);
-        add(cleanButton);
-        add(helpMenu);
+        add(menuArchivo);
+        add(menuEjecutar);
+        add(menuReportes);
+        add(menuAyuda);
     }
 
-    public void onRun(ActionListener l) {
-        runButton.addActionListener(l);
-    }
-
-    public void onClean(ActionListener l) {
-        cleanButton.addActionListener(l);
-    }
-
+    // Hooks: el frame conecta aqui cada accion
     public void onNew(ActionListener l) {
-        newItem.addActionListener(l);
+        itemNuevo.addActionListener(l);
+    }
+
+    public void onOpen(ActionListener l) {
+        itemAbrir.addActionListener(l);
+    }
+
+    public void onSave(ActionListener l) {
+        itemGuardar.addActionListener(l);
+    }
+
+    public void onSaveAs(ActionListener l) {
+        itemGuardarComo.addActionListener(l);
     }
 
     public void onExit(ActionListener l) {
-        exitItem.addActionListener(l);
+        itemSalir.addActionListener(l);
+    }
+
+    public void onRun(ActionListener l) {
+        itemEjecutar.addActionListener(l);
+    }
+
+    public void onClean(ActionListener l) {
+        itemLimpiar.addActionListener(l);
     }
 
     public void onTokens(ActionListener l) {
-        tokensItem.addActionListener(l);
+        itemTokens.addActionListener(l);
     }
 
     public void onErrors(ActionListener l) {
-        errorsItem.addActionListener(l);
+        itemErrores.addActionListener(l);
     }
 
     public void onAbout(ActionListener l) {
-        aboutItem.addActionListener(l);
-    }
-
-    private static JButton createButton(String text) {
-        JButton button = new JButton(text);
-        button.setFocusPainted(false);
-        button.setBorderPainted(false);
-        button.setContentAreaFilled(false);
-        button.setOpaque(false);
-        button.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                button.setBackground(Color.LIGHT_GRAY);
-                button.setOpaque(true);
-            }
-
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                button.setOpaque(false);
-            }
-        });
-        return button;
+        itemAcerca.addActionListener(l);
     }
 }
