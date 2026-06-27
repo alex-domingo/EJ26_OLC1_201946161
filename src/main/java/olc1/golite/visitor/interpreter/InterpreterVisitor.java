@@ -13,7 +13,7 @@ import olc1.golite.ast.stm.*;
 import olc1.golite.reports.GoliteError;
 import olc1.golite.reports.SemanticException;
 import olc1.golite.symbols.Environment;
-import olc1.golite.symbols.GoliteType;
+import olc1.golite.symbols.GType;
 import olc1.golite.symbols.SymbolEntry;
 import olc1.golite.visitor.Visitor;
 import olc1.golite.visitor.interpreter.control.BreakSignal;
@@ -149,20 +149,22 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     // ===== Helpers de tipos =====
-    private GoliteType typeOf(ValueWrapper v) {
+    private GType typeOf(ValueWrapper v) {
         return switch (v) {
             case IntValue x ->
-                GoliteType.INT;
+                GType.INT;
             case DecimalValue x ->
-                GoliteType.FLOAT64;
+                GType.FLOAT64;
             case StringValue x ->
-                GoliteType.STRING;
+                GType.STRING;
             case BoolValue x ->
-                GoliteType.BOOL;
+                GType.BOOL;
             case RuneValue x ->
-                GoliteType.RUNE;
+                GType.RUNE;
             case VoidValue x ->
-                GoliteType.VOID;
+                GType.VOID;
+            case SliceValue x ->
+                x.getType();
         };
     }
 
@@ -177,8 +179,12 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         return ((DecimalValue) v).value();
     }
 
-    private ValueWrapper defaultValue(GoliteType type, int line, int column) {
-        return switch (type) {
+    private ValueWrapper defaultValue(GType type, int line, int column) {
+        // un slice sin inicializar arranca vacio (en vez de nil, por simplicidad)
+        if (type.isSlice()) {
+            return new SliceValue(new ArrayList<>(), type, line, column);
+        }
+        return switch (type.getBase()) {
             case INT ->
                 new IntValue(0, line, column);
             case FLOAT64 ->
@@ -195,12 +201,12 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     // valida asignabilidad a 'declared'. unica conversion implicita: int -> float64
-    private ValueWrapper checkAndConvert(GoliteType declared, ValueWrapper value, int line, int column) {
-        GoliteType actual = typeOf(value);
-        if (actual == declared) {
+    private ValueWrapper checkAndConvert(GType declared, ValueWrapper value, int line, int column) {
+        GType actual = typeOf(value);
+        if (actual.equals(declared)) {
             return value;
         }
-        if (declared == GoliteType.FLOAT64 && actual == GoliteType.INT) {
+        if (declared.equals(GType.FLOAT64) && actual.equals(GType.INT)) {
             IntValue iv = (IntValue) value;
             return new DecimalValue(iv.value(), line, column);
         }
@@ -397,6 +403,20 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         return Visit(ctx.expression);
     }
 
+    // ===== Literal de slice =====
+    @Override
+    public ValueWrapper visit(SliceLiteral.Context ctx) {
+        GType sliceType = ctx.type;               // ej. []int
+        GType elemType = sliceType.elementType();  // ej. int
+        List<ValueWrapper> elementos = new ArrayList<>();
+        for (ASTNode e : ctx.elements) {
+            ValueWrapper v = Visit(e);
+            // cada elemento debe ser asignable al tipo del slice (con int->float64)
+            elementos.add(checkAndConvert(elemType, v, ctx.line, ctx.column));
+        }
+        return new SliceValue(elementos, sliceType, ctx.line, ctx.column);
+    }
+
     // ===== Aritmetica =====
     @Override
     public ValueWrapper visit(Add.Context ctx) {
@@ -562,7 +582,7 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         }
 
         ValueWrapper value;
-        GoliteType declared = ctx.declaredType;
+        GType declared = ctx.declaredType;
 
         if (ctx.value != null) {
             ValueWrapper evaluated = Visit(ctx.value);

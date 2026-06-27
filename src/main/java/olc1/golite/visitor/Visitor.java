@@ -16,6 +16,8 @@ public interface Visitor<T> {
 
     T visit(RuneLiteral.Context ctx);
 
+    T visit(SliceLiteral.Context ctx);
+
     T visit(Paren.Context ctx);
 
     // Aritmetica
