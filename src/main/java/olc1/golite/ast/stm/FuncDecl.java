@@ -3,20 +3,19 @@ package olc1.golite.ast.stm;
 import java.util.List;
 
 import olc1.golite.ast.ASTNode;
-import olc1.golite.symbols.GoliteType;
+import olc1.golite.symbols.GType;
 import olc1.golite.visitor.Visitor;
 
-// Declaracion de funcion. returnType en null significa que no retorna (void).
 public class FuncDecl implements ASTNode {
 
     private final String name;
     private final List<Param> params;
-    private final GoliteType returnType;
-    private final ASTNode body; // Bloque
+    private final GType returnType; // null => void
+    private final ASTNode body;
     private final int line;
     private final int column;
 
-    public FuncDecl(String name, List<Param> params, GoliteType returnType, ASTNode body, int line, int column) {
+    public FuncDecl(String name, List<Param> params, GType returnType, ASTNode body, int line, int column) {
         this.name = name;
         this.params = params;
         this.returnType = returnType;
@@ -25,7 +24,6 @@ public class FuncDecl implements ASTNode {
         this.column = column;
     }
 
-    // getters usados en el hoisting y en la llamada
     public String getName() {
         return name;
     }
@@ -34,7 +32,7 @@ public class FuncDecl implements ASTNode {
         return params;
     }
 
-    public GoliteType getReturnType() {
+    public GType getReturnType() {
         return returnType;
     }
 

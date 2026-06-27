@@ -79,6 +79,8 @@ rune_escape = \\ [\'\\nrt]
 ")"     { return tok(sym.rparen,  "parentesis_der"); }
 "{"     { return tok(sym.lbrace,  "llave_izq"); }
 "}"     { return tok(sym.rbrace,  "llave_der"); }
+"["     { return tok(sym.lbracket, "corchete_izq"); }
+"]"     { return tok(sym.rbracket, "corchete_der"); }
 "+"     { return tok(sym.plus,    "suma"); }
 "-"     { return tok(sym.minus,   "resta"); }
 "*"     { return tok(sym.times,   "multiplicacion"); }

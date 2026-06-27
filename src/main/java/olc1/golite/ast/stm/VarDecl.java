@@ -1,18 +1,18 @@
 package olc1.golite.ast.stm;
 
 import olc1.golite.ast.ASTNode;
-import olc1.golite.symbols.GoliteType;
+import olc1.golite.symbols.GType;
 import olc1.golite.visitor.Visitor;
 
 public class VarDecl implements ASTNode {
 
     private final String name;
-    private final GoliteType declaredType; // null => inferir (:=)
-    private final ASTNode value;           // null => sin valor inicial (default)
+    private final GType declaredType; // null => inferir (:=)
+    private final ASTNode value;       // null => sin valor inicial (default)
     private final int line;
     private final int column;
 
-    public VarDecl(String name, GoliteType declaredType, ASTNode value, int line, int column) {
+    public VarDecl(String name, GType declaredType, ASTNode value, int line, int column) {
         this.name = name;
         this.declaredType = declaredType;
         this.value = value;
@@ -23,7 +23,7 @@ public class VarDecl implements ASTNode {
     public static class Context {
 
         public final String name;
-        public final GoliteType declaredType;
+        public final GType declaredType;
         public final ASTNode value;
         public final int line;
         public final int column;

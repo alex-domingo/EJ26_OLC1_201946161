@@ -5,12 +5,12 @@ import olc1.golite.visitor.interpreter.value.ValueWrapper;
 public class SymbolEntry {
 
     private final String name;
-    private final GoliteType type;
+    private final GType type;
     private ValueWrapper value;
     private final int line;
     private final int column;
 
-    public SymbolEntry(String name, GoliteType type, ValueWrapper value, int line, int column) {
+    public SymbolEntry(String name, GType type, ValueWrapper value, int line, int column) {
         this.name = name;
         this.type = type;
         this.value = value;
@@ -22,7 +22,7 @@ public class SymbolEntry {
         return name;
     }
 
-    public GoliteType getType() {
+    public GType getType() {
         return type;
     }
 
