@@ -74,6 +74,8 @@ public interface Visitor<T> {
 
     T visit(IfNode.Context ctx);
 
+    T visit(SwitchNode.Context ctx);
+
     T visit(ForNode.Context ctx);
 
     T visit(Bloque.Context ctx);

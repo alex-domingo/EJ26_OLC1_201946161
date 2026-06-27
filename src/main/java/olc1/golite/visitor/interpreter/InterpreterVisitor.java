@@ -593,4 +593,41 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         }
         return defaultVoid;
     }
+
+    @Override
+    public ValueWrapper visit(SwitchNode.Context ctx) {
+        ValueWrapper sv = Visit(ctx.expression);
+        try {
+            // recorremos los case en orden y ejecutamos el primero que coincida
+            for (CaseClause c : ctx.cases) {
+                ValueWrapper cv = Visit(c.value);
+                if (sonIguales(sv, cv)) {
+                    ejecutarCuerpoCase(c.body);
+                    return defaultVoid; // break implicito: no hay fall-through
+                }
+            }
+            // si ningun case coincidio, ejecutamos el default (si existe)
+            if (ctx.defaultBody != null) {
+                ejecutarCuerpoCase(ctx.defaultBody);
+            }
+        } catch (BreakSignal bs) {
+            // un break dentro del switch simplemente lo termina
+            // (el continue NO se atrapa aqui: pertenece al for que lo contenga)
+        }
+        return defaultVoid;
+    }
+
+    // ejecuta el cuerpo de un case en su propio ambito
+    private void ejecutarCuerpoCase(ASTNode body) {
+        if (body == null) {
+            return;
+        }
+        Environment previo = currentEnv;
+        currentEnv = new Environment(previo);
+        try {
+            Visit(body);
+        } finally {
+            currentEnv = previo;
+        }
+    }
 }
