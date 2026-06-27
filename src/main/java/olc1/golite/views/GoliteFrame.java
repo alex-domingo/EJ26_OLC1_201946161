@@ -5,6 +5,12 @@ import java.io.BufferedReader;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import javax.swing.JFileChooser;
+import javax.swing.filechooser.FileNameExtensionFilter;
 
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
@@ -29,6 +35,8 @@ public class GoliteFrame extends JFrame {
     private final JTextArea consoleTextArea;
     private Lexer lexer;
     private parser parser;
+    // archivo actualmente abierto en el editor (null si es nuevo / sin guardar)
+    private File currentFile = null;
 
     public GoliteFrame() {
         setTitle("Golite");
@@ -52,15 +60,18 @@ public class GoliteFrame extends JFrame {
     }
 
     private void wireActions(GoliteMenuBar menuBar) {
+        menuBar.onNew(e -> newFile());
+        menuBar.onOpen(e -> openFile());
+        menuBar.onSave(e -> saveFile());
+        menuBar.onSaveAs(e -> saveFileAs());
+        menuBar.onExit(e -> System.exit(0));
         menuBar.onRun(e -> run());
         menuBar.onClean(e -> cleanConsole());
-        menuBar.onNew(e -> editorPanel.setText("fmt.Println(\"Hola GoLite\");\n"));
-        menuBar.onExit(e -> System.exit(0));
         menuBar.onTokens(e -> tokens());
         menuBar.onErrors(e -> errors());
         menuBar.onAbout(e -> JOptionPane.showMessageDialog(
                 this,
-                "GoLite\nVersión 1.0.0\nLaboratorio OLC1",
+                "GoLite\nVersión 2.0.0\nLaboratorio OLC1",
                 "Acerca de",
                 JOptionPane.INFORMATION_MESSAGE));
     }
@@ -179,6 +190,88 @@ public class GoliteFrame extends JFrame {
             new ReportFrame("Reporte de Tokens", columnas, datos);
         } catch (Exception e) {
             consoleTextArea.append("Error generando reporte de tokens: " + e.getMessage() + "\n");
+        }
+    }
+
+    // crea un JFileChooser que solo muestra archivos .glt
+    private JFileChooser buildChooser() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setFileFilter(new FileNameExtensionFilter("Archivos GoLite (*.glt)", "glt"));
+        return chooser;
+    }
+
+    // Nuevo: archivo en blanco
+    private void newFile() {
+        editorPanel.setText("");
+        currentFile = null;
+        updateTitle();
+        cleanConsole();
+        editorPanel.getTextArea().requestFocus();
+    }
+
+    // Abrir: carga un .glt al editor
+    private void openFile() {
+        JFileChooser chooser = buildChooser();
+        chooser.setDialogTitle("Abrir archivo");
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File file = chooser.getSelectedFile();
+        try {
+            String contenido = Files.readString(file.toPath(), StandardCharsets.UTF_8);
+            editorPanel.setText(contenido);
+            currentFile = file;
+            updateTitle();
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "No se pudo abrir el archivo:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    // Guardar: si nunca se guardo, se comporta como "Guardar como"
+    private void saveFile() {
+        if (currentFile == null) {
+            saveFileAs();
+            return;
+        }
+        writeToFile(currentFile);
+    }
+
+    // Guardar como: pide ruta y garantiza la extension .glt
+    private void saveFileAs() {
+        JFileChooser chooser = buildChooser();
+        chooser.setDialogTitle("Guardar archivo");
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File file = chooser.getSelectedFile();
+        if (!file.getName().toLowerCase().endsWith(".glt")) {
+            file = new File(file.getAbsolutePath() + ".glt");
+        }
+        currentFile = file;
+        writeToFile(file);
+        updateTitle();
+    }
+
+    // escribe el contenido del editor en disco (UTF-8)
+    private void writeToFile(File file) {
+        try {
+            Files.writeString(file.toPath(), editorPanel.getText(), StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "No se pudo guardar el archivo:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    // refleja el archivo abierto en la barra de titulo
+    private void updateTitle() {
+        if (currentFile == null) {
+            setTitle("Golite - (sin titulo)");
+        } else {
+            setTitle("Golite - " + currentFile.getName());
         }
     }
 
