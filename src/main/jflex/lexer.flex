@@ -115,6 +115,10 @@ rune_escape = \\ [\'\\nrt]
 "func"     { return tok(sym.kwFunc,     "reservada"); }
 "return"   { return tok(sym.kwReturn,   "reservada"); }
 
+// ----- NUEVAS PALABRAS RESERVADAS (funciones globales) -----
+"len"      { return tok(sym.kwLen,    "reservada"); }
+"append"   { return tok(sym.kwAppend, "reservada"); }
+
 // Funciones embebidas: paquete y metodo
 "fmt"        { return tok(sym.pkgFmt,      "paquete"); }
 "Println"    { return tok(sym.mPrintln,    "metodo"); }
@@ -123,6 +127,12 @@ rune_escape = \\ [\'\\nrt]
 "ParseFloat" { return tok(sym.mParseFloat, "metodo"); }
 "reflect"    { return tok(sym.pkgReflect,  "paquete"); }
 "TypeOf"     { return tok(sym.mTypeOf,     "metodo"); }
+
+// ----- NUEVOS PAQUETES Y MÉTODOS -----
+"slices"   { return tok(sym.pkgSlices, "paquete"); }
+"Index"    { return tok(sym.mIndex,    "metodo"); }
+"strings"  { return tok(sym.pkgStrings, "paquete"); }
+"Join"     { return tok(sym.mJoin,     "metodo"); }
 
 // Identificadores
 ({letter}|_)({letter}|{digit}|_)* { return tok(sym.id, "id"); }

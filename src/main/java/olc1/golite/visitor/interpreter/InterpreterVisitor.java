@@ -562,6 +562,105 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         return new StringValue(typeOf(v).getLabel(), ctx.line, ctx.column);
     }
 
+    // ===== Helper de slices =====
+    // evalua un indice y valida que sea int y que este dentro de rango
+    private int indiceValido(SliceValue slice, ASTNode indexExpr, int line, int column) {
+        ValueWrapper idx = Visit(indexExpr);
+        if (!(idx instanceof IntValue iv)) {
+            throw semantic("El indice de un slice debe ser de tipo int", line, column);
+        }
+        int i = iv.value();
+        if (i < 0 || i >= slice.getElements().size()) {
+            throw semantic("Indice fuera de rango: " + i + " (tamano " + slice.getElements().size() + ")", line, column);
+        }
+        return i;
+    }
+
+    // ===== Acceso y modificacion =====
+    @Override
+    public ValueWrapper visit(Index.Context ctx) {
+        ValueWrapper target = Visit(ctx.target);
+        if (!(target instanceof SliceValue slice)) {
+            throw semantic("Solo se puede indexar un slice", ctx.line, ctx.column);
+        }
+        int i = indiceValido(slice, ctx.index, ctx.line, ctx.column);
+        return slice.getElements().get(i);
+    }
+
+    @Override
+    public ValueWrapper visit(IndexAssign.Context ctx) {
+        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
+        if (!(entry.getValue() instanceof SliceValue slice)) {
+            throw semantic("La variable '" + ctx.name + "' no es un slice", ctx.line, ctx.column);
+        }
+        int i = indiceValido(slice, ctx.index, ctx.line, ctx.column);
+        // el valor nuevo debe ser asignable al tipo de los elementos
+        ValueWrapper nuevo = checkAndConvert(slice.getType().elementType(), Visit(ctx.value), ctx.line, ctx.column);
+        slice.getElements().set(i, nuevo); // muta la lista (paso por referencia)
+        return defaultVoid;
+    }
+
+    // ===== Funciones de slice =====
+    @Override
+    public ValueWrapper visit(Len.Context ctx) {
+        ValueWrapper v = Visit(ctx.expression);
+        if (!(v instanceof SliceValue slice)) {
+            throw semantic("len() requiere un slice", ctx.line, ctx.column);
+        }
+        return new IntValue(slice.getElements().size(), ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(Append.Context ctx) {
+        ValueWrapper v = Visit(ctx.slice);
+        if (!(v instanceof SliceValue slice)) {
+            throw semantic("append() requiere un slice como primer argumento", ctx.line, ctx.column);
+        }
+        ValueWrapper nuevo = checkAndConvert(slice.getType().elementType(), Visit(ctx.value), ctx.line, ctx.column);
+        // devolvemos un slice NUEVO (semantica de Go: s = append(s, x))
+        List<ValueWrapper> copia = new ArrayList<>(slice.getElements());
+        copia.add(nuevo);
+        return new SliceValue(copia, slice.getType(), ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(SliceIndex.Context ctx) {
+        ValueWrapper v = Visit(ctx.slice);
+        if (!(v instanceof SliceValue slice)) {
+            throw semantic("slices.Index() requiere un slice como primer argumento", ctx.line, ctx.column);
+        }
+        ValueWrapper buscado = Visit(ctx.value);
+        List<ValueWrapper> elems = slice.getElements();
+        for (int i = 0; i < elems.size(); i++) {
+            // reusamos la igualdad ya definida; si los tipos no comparan, da error
+            if (sonIguales(elems.get(i), buscado)) {
+                return new IntValue(i, ctx.line, ctx.column);
+            }
+        }
+        return new IntValue(-1, ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(StringsJoin.Context ctx) {
+        ValueWrapper v = Visit(ctx.slice);
+        if (!(v instanceof SliceValue slice) || !slice.getType().equals(GType.STRING.sliceOf())) {
+            throw semantic("strings.Join() requiere un slice de tipo []string", ctx.line, ctx.column);
+        }
+        ValueWrapper sep = Visit(ctx.separator);
+        if (!(sep instanceof StringValue sepStr)) {
+            throw semantic("El separador de strings.Join() debe ser de tipo string", ctx.line, ctx.column);
+        }
+        StringBuilder sb = new StringBuilder();
+        List<ValueWrapper> elems = slice.getElements();
+        for (int i = 0; i < elems.size(); i++) {
+            if (i > 0) {
+                sb.append(sepStr.value());
+            }
+            sb.append(((StringValue) elems.get(i)).value());
+        }
+        return new StringValue(sb.toString(), ctx.line, ctx.column);
+    }
+
     // ===== Llamada a funcion =====
     @Override
     public ValueWrapper visit(Call.Context ctx) {

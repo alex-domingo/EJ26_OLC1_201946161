@@ -60,6 +60,16 @@ public interface Visitor<T> {
 
     T visit(TypeOf.Context ctx);
 
+    T visit(Index.Context ctx);
+
+    T visit(Len.Context ctx);
+
+    T visit(Append.Context ctx);
+
+    T visit(SliceIndex.Context ctx);
+
+    T visit(StringsJoin.Context ctx);
+
     // Llamada a funcion
     T visit(Call.Context ctx);
 
@@ -69,6 +79,8 @@ public interface Visitor<T> {
     T visit(VarDecl.Context ctx);
 
     T visit(Assign.Context ctx);
+
+    T visit(IndexAssign.Context ctx);
 
     T visit(CompoundAssign.Context ctx);
 
