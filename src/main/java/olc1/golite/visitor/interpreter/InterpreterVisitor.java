@@ -406,15 +406,29 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     // ===== Literal de slice =====
     @Override
     public ValueWrapper visit(SliceLiteral.Context ctx) {
-        GType sliceType = ctx.type;               // ej. []int
-        GType elemType = sliceType.elementType();  // ej. int
-        List<ValueWrapper> elementos = new ArrayList<>();
-        for (ASTNode e : ctx.elements) {
-            ValueWrapper v = Visit(e);
-            // cada elemento debe ser asignable al tipo del slice (con int->float64)
-            elementos.add(checkAndConvert(elemType, v, ctx.line, ctx.column));
+        return construirSlice(ctx.type, ctx.elements, ctx.line, ctx.column);
+    }
+
+    // construye un SliceValue de tipo 'sliceType' a partir de una lista de elementos.
+    // si un elemento es una fila anidada (NestedSlice), la resuelve recursivamente
+    // usando el tipo del elemento (una dimension menos).
+    private SliceValue construirSlice(GType sliceType, List<ASTNode> elementos, int line, int column) {
+        GType elemType = sliceType.elementType();
+        List<ValueWrapper> valores = new ArrayList<>();
+        for (ASTNode e : elementos) {
+            if (e instanceof NestedSlice ns) {
+                // una fila {...}: debe corresponder a un elemento que es slice
+                if (!elemType.isSlice()) {
+                    throw semantic("No se esperaba una lista anidada en un slice de tipo " + sliceType.getLabel(),
+                            ns.getLine(), ns.getColumn());
+                }
+                valores.add(construirSlice(elemType, ns.getElements(), ns.getLine(), ns.getColumn()));
+            } else {
+                ValueWrapper v = Visit(e);
+                valores.add(checkAndConvert(elemType, v, line, column));
+            }
         }
-        return new SliceValue(elementos, sliceType, ctx.line, ctx.column);
+        return new SliceValue(valores, sliceType, line, column);
     }
 
     // ===== Aritmetica =====
@@ -589,12 +603,11 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
 
     @Override
     public ValueWrapper visit(IndexAssign.Context ctx) {
-        SymbolEntry entry = currentEnv.get(ctx.name, ctx.line, ctx.column);
-        if (!(entry.getValue() instanceof SliceValue slice)) {
-            throw semantic("La variable '" + ctx.name + "' no es un slice", ctx.line, ctx.column);
+        ValueWrapper targetVal = Visit(ctx.target);
+        if (!(targetVal instanceof SliceValue slice)) {
+            throw semantic("Solo se puede indexar un slice", ctx.line, ctx.column);
         }
         int i = indiceValido(slice, ctx.index, ctx.line, ctx.column);
-        // el valor nuevo debe ser asignable al tipo de los elementos
         ValueWrapper nuevo = checkAndConvert(slice.getType().elementType(), Visit(ctx.value), ctx.line, ctx.column);
         slice.getElements().set(i, nuevo); // muta la lista (paso por referencia)
         return defaultVoid;
@@ -798,6 +811,46 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     @Override
+    public ValueWrapper visit(ForRange.Context ctx) {
+        ValueWrapper col = Visit(ctx.slice);
+        if (!(col instanceof SliceValue slice)) {
+            throw semantic("range requiere un slice", ctx.line, ctx.column);
+        }
+
+        // ambito propio del for: aqui viven indice y valor
+        Environment previo = currentEnv;
+        currentEnv = new Environment(previo);
+        try {
+            GType elemType = slice.getType().elementType();
+            // recorremos por indice (no usamos un iterador de Java para respetar el tamano inicial)
+            for (int i = 0; i < slice.getElements().size(); i++) {
+                // ambito por iteracion, para redeclarar indice/valor limpio cada vuelta
+                Environment iterEnv = new Environment(currentEnv);
+                Environment guardado = currentEnv;
+                currentEnv = iterEnv;
+                try {
+                    currentEnv.declare(new SymbolEntry(ctx.indexName, GType.INT,
+                            new IntValue(i, ctx.line, ctx.column), ctx.line, ctx.column));
+                    currentEnv.declare(new SymbolEntry(ctx.valueName, elemType,
+                            slice.getElements().get(i), ctx.line, ctx.column));
+                    try {
+                        Visit(ctx.body);
+                    } catch (ContinueSignal cs) {
+                        // continue: siguiente iteracion
+                    } catch (BreakSignal bs) {
+                        break;
+                    }
+                } finally {
+                    currentEnv = guardado;
+                }
+            }
+        } finally {
+            currentEnv = previo;
+        }
+        return defaultVoid;
+    }
+
+    @Override
     public ValueWrapper visit(SwitchNode.Context ctx) {
         ValueWrapper sv = Visit(ctx.expression);
         try {
@@ -872,5 +925,11 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
             Visit(statment);
         }
         return defaultVoid;
+    }
+
+    // ===== NestedSlice =====
+    @Override
+    public ValueWrapper visit(NestedSlice.Context ctx) {
+        throw semantic("Una lista anidada solo puede aparecer dentro de un literal de slice", ctx.line, ctx.column);
     }
 }

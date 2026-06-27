@@ -10,8 +10,7 @@ import olc1.golite.ast.ASTNode;
 import olc1.golite.ast.exp.*;
 import olc1.golite.ast.stm.*;
 import olc1.golite.ast.stm.Param;
-import olc1.golite.symbols.GoliteType;
-import olc1.golite.symbols.GType;           // <--- NUEVA IMPORTACIÓN
+import olc1.golite.symbols.GType;
 import olc1.golite.reports.GoliteError;
 
 parser code
@@ -33,7 +32,7 @@ terminal String id;
 terminal String runeLit;
 
 terminal lparen, rparen, lbrace, rbrace;
-terminal lbracket, rbracket;               // <--- NUEVOS TERMINALES
+terminal lbracket, rbracket;
 terminal plus, minus, times, slash, percent, UMENOS;
 terminal scol, comma, dot, assign;
 terminal equal, nequal, less, lesseq, greater, greatereq;
@@ -48,42 +47,43 @@ terminal pkgFmt, mPrintln;
 terminal pkgStrconv, mAtoi, mParseFloat;
 terminal pkgReflect, mTypeOf;
 
-// Terminales para switch
 terminal kwSwitch, kwCase, kwDefault, colon;
-
-// Terminales para funciones
 terminal kwFunc, kwReturn;
-
-// ----- NUEVOS TERMINALES -----
 terminal kwLen, kwAppend;
 terminal pkgSlices, mIndex;
 terminal pkgStrings, mJoin;
+terminal kwRange;
 
 // ===== No terminales =====
 nonterminal Statments INICIO, INSTRUCCIONES;
 nonterminal ASTNode INSTRUCCION;
 nonterminal ASTNode EXPRESION;
-nonterminal GType TIPO;                    // <--- AHORA USA GType
-nonterminal GType SLICETYPE;               // <--- NUEVO NO TERMINAL
+nonterminal ASTNode EXPRSTMT;            // sentencia de expresion (llamada o asignacion indexada)
+nonterminal GType TIPO;
+nonterminal GType SLICETYPE;
 nonterminal ASTNode BLOQUE, IFSTMT, FORSTMT, FOR_SIMPLE;
 nonterminal List<ASTNode> ARGS, LISTA_EXPR;
 nonterminal PUNTOCOMA;
 
-// No terminales para switch
 nonterminal ASTNode SWITCHSTMT;
 nonterminal List<CaseClause> CASES;
 nonterminal CaseClause CASE;
 nonterminal Statments CASE_BODY;
 nonterminal ASTNode DEFAULTOPT;
 
-// No terminales para funciones
 nonterminal ASTNode FUNCDECL;
 nonterminal List<Param> PARAMS, LISTA_PARAMS;
 nonterminal Param PARAM;
 nonterminal ASTNode RETURNSTMT;
 
-// Nuevo no-terminal para acceso (variable o llamada)
 nonterminal ASTNode ACCESO;
+
+nonterminal Integer DIMS;
+nonterminal GType TIPO_BASE;
+
+nonterminal List<ASTNode> SLICE_ELEMS;
+nonterminal ASTNode SLICE_ELEM;
+nonterminal List<ASTNode> SLICE_ELEM_LIST;   // <--- NUEVO
 
 // ===== Precedencia (de menor a mayor) =====
 precedence left or;
@@ -93,7 +93,7 @@ precedence left less, lesseq, greater, greatereq;
 precedence left plus, minus;
 precedence left times, slash, percent;
 precedence right not, UMENOS;
-precedence left lbracket;   // <--- máxima prioridad para el indexado
+precedence left lbracket;
 
 start with INICIO;
 
@@ -106,7 +106,6 @@ INSTRUCCIONES ::= INSTRUCCIONES:is INSTRUCCION:i  {: is.add(i); RESULT = is; :}
                 | INSTRUCCION:i                    {: RESULT = new Statments(i); :}
 ;
 
-// PUNTOCOMA opcional (versión original con alternativa vacía)
 PUNTOCOMA ::= scol
             |
 ;
@@ -119,7 +118,7 @@ INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen PUNTOCOMA  {: RESULT 
               | id:n plusassign EXPRESION:e PUNTOCOMA                  {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
               | id:n minusassign EXPRESION:e PUNTOCOMA                 {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
               | id:n inc PUNTOCOMA                                     {: RESULT = new IncDec(n, '+', nleft, nright); :}
-              | id:n lbracket EXPRESION:i rbracket assign EXPRESION:e PUNTOCOMA  {: RESULT = new IndexAssign(n, i, e, nleft, nright); :}  // <--- NUEVA
+              | EXPRSTMT:s PUNTOCOMA                                   {: RESULT = s; :}
               | kwBreak:b PUNTOCOMA                                    {: RESULT = new BreakNode(bleft, bright); :}
               | kwContinue:c PUNTOCOMA                                 {: RESULT = new ContinueNode(cleft, cright); :}
               | IFSTMT:s                                               {: RESULT = s; :}
@@ -128,8 +127,21 @@ INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen PUNTOCOMA  {: RESULT 
               | SWITCHSTMT:s                                           {: RESULT = s; :}
               | FUNCDECL:f                                             {: RESULT = f; :}
               | RETURNSTMT:r                                           {: RESULT = r; :}
-              | id:n lparen ARGS:a rparen PUNTOCOMA  {: RESULT = new Call(n, a, nleft, nright); :}
               | error scol                                             {: RESULT = null; :}
+;
+
+// Sentencia de expresion: se reconoce la EXPRESION completa primero, y el
+// PUNTOCOMA se aplica una sola vez afuera (en INSTRUCCION). Esto elimina el
+// reduce/reduce entre cerrar la sentencia y continuar la expresion.
+EXPRSTMT ::= EXPRESION:e
+                {:
+                    // Una expresion suelta como sentencia solo es valida si es una
+                    // llamada a funcion o una asignacion indexada (las cubre abajo).
+                    // Aqui aceptamos llamada como sentencia.
+                    RESULT = e;
+                :}
+           | EXPRESION:t lbracket EXPRESION:i rbracket assign EXPRESION:v
+                {: RESULT = new IndexAssign(t, i, v, tleft, tright); :}
 ;
 
 BLOQUE ::= lbrace INSTRUCCIONES:is rbrace  {: RESULT = new Bloque(is); :}
@@ -145,6 +157,8 @@ FORSTMT ::= kwFor EXPRESION:c BLOQUE:b
                 {: RESULT = new ForNode(null, c, null, b); :}
           | kwFor FOR_SIMPLE:i scol EXPRESION:c scol FOR_SIMPLE:p BLOQUE:b
                 {: RESULT = new ForNode(i, c, p, b); :}
+          | kwFor id:n1 comma id:n2 dassign kwRange EXPRESION:s BLOQUE:b
+                {: RESULT = new ForRange(n1, n2, s, b, n1left, n1right); :}
 ;
 
 FOR_SIMPLE ::= id:n dassign EXPRESION:e     {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
@@ -162,7 +176,6 @@ LISTA_EXPR ::= LISTA_EXPR:l comma EXPRESION:e  {: l.add(e); RESULT = l; :}
              | EXPRESION:e                      {: List<ASTNode> nl = new ArrayList<>(); nl.add(e); RESULT = nl; :}
 ;
 
-// ---------- TIPO y SLICETYPE (nuevos) ----------
 TIPO ::= tipoInt     {: RESULT = GType.INT; :}
        | tipoFloat   {: RESULT = GType.FLOAT64; :}
        | tipoString  {: RESULT = GType.STRING; :}
@@ -172,6 +185,31 @@ TIPO ::= tipoInt     {: RESULT = GType.INT; :}
 ;
 
 SLICETYPE ::= lbracket rbracket TIPO:t  {: RESULT = t.sliceOf(); :}
+;
+
+TIPO_BASE ::= tipoInt     {: RESULT = GType.INT; :}
+            | tipoFloat   {: RESULT = GType.FLOAT64; :}
+            | tipoString  {: RESULT = GType.STRING; :}
+            | tipoBool    {: RESULT = GType.BOOL; :}
+            | tipoRune    {: RESULT = GType.RUNE; :}
+;
+
+DIMS ::= lbracket rbracket DIMS:d  {: RESULT = d + 1; :}
+       | lbracket rbracket          {: RESULT = 1; :}
+;
+
+// ---------- SLICE_ELEMS y SLICE_ELEM ----------
+SLICE_ELEMS ::= SLICE_ELEM_LIST:l         {: RESULT = l; :}
+              | SLICE_ELEM_LIST:l comma    {: RESULT = l; :}
+              |                             {: RESULT = new ArrayList<>(); :}
+;
+
+SLICE_ELEM_LIST ::= SLICE_ELEM_LIST:l comma SLICE_ELEM:e  {: l.add(e); RESULT = l; :}
+                  | SLICE_ELEM:e                           {: List<ASTNode> nl = new ArrayList<>(); nl.add(e); RESULT = nl; :}
+;
+
+SLICE_ELEM ::= EXPRESION:e                  {: RESULT = e; :}
+             | lbrace SLICE_ELEMS:l rbrace  {: RESULT = new NestedSlice(l, lleft, lright); :}
 ;
 
 // ---------- EXPRESION ----------
@@ -191,31 +229,34 @@ EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %p
             | EXPRESION:a and EXPRESION:b       {: RESULT = new And(a, b); :}
             | EXPRESION:a or EXPRESION:b        {: RESULT = new Or(a, b); :}
             | lparen EXPRESION:e rparen         {: RESULT = new Paren(e); :}
-            | EXPRESION:t lbracket EXPRESION:i rbracket            {: RESULT = new Index(t, i, tleft, tright); :}  // <--- NUEVO
-            | kwLen lparen EXPRESION:e rparen                      {: RESULT = new Len(e, eleft, eright); :}       // <--- NUEVO
-            | kwAppend lparen EXPRESION:s comma EXPRESION:v rparen {: RESULT = new Append(s, v, sleft, sright); :} // <--- NUEVO
-            | pkgSlices dot mIndex lparen EXPRESION:s comma EXPRESION:v rparen   {: RESULT = new SliceIndex(s, v, sleft, sright); :} // <--- NUEVO
-            | pkgStrings dot mJoin lparen EXPRESION:s comma EXPRESION:sep rparen {: RESULT = new StringsJoin(s, sep, sleft, sright); :} // <--- NUEVO
+            | EXPRESION:t lbracket EXPRESION:i rbracket            {: RESULT = new Index(t, i, tleft, tright); :}
+            | kwLen lparen EXPRESION:e rparen                      {: RESULT = new Len(e, eleft, eright); :}
+            | kwAppend lparen EXPRESION:s comma EXPRESION:v rparen {: RESULT = new Append(s, v, sleft, sright); :}
+            | pkgSlices dot mIndex lparen EXPRESION:s comma EXPRESION:v rparen   {: RESULT = new SliceIndex(s, v, sleft, sright); :}
+            | pkgStrings dot mJoin lparen EXPRESION:s comma EXPRESION:sep rparen {: RESULT = new StringsJoin(s, sep, sleft, sright); :}
             | pkgStrconv dot mAtoi lparen EXPRESION:e rparen        {: RESULT = new Atoi(e, eleft, eright); :}
             | pkgStrconv dot mParseFloat lparen EXPRESION:e rparen  {: RESULT = new ParseFloat(e, eleft, eright); :}
-            | pkgReflect dot mTypeOf lparen EXPRESION:e rparen      {: RESULT = new TypeOf(e, eleft, eright); :}
             | pkgReflect dot mTypeOf lparen EXPRESION:e rparen dot tipoString  {: RESULT = new TypeOf(e, eleft, eright); :}
-            | ACCESO:a                      {: RESULT = a; :}
+            | pkgReflect dot mTypeOf lparen EXPRESION:e rparen      {: RESULT = new TypeOf(e, eleft, eright); :}
+            | ACCESO:a                          {: RESULT = a; :}
             | kwTrue:t                          {: RESULT = new BoolLiteral(true, tleft, tright); :}
             | kwFalse:f                         {: RESULT = new BoolLiteral(false, fleft, fright); :}
             | integer:e                         {: RESULT = new Integers(Integer.parseInt(e), eleft, eright); :}
             | decimal:e                         {: RESULT = new Decimal(Double.parseDouble(e), eleft, eright); :}
             | string:s                          {: RESULT = new StringLiteral(s, sleft, sright); :}
             | runeLit:r                         {: RESULT = new RuneLiteral(r, rleft, rright); :}
-            | SLICETYPE:t lbrace ARGS:e rbrace  {: RESULT = new SliceLiteral(t, e, tleft, tright); :}
+            | DIMS:d TIPO_BASE:base lbrace SLICE_ELEMS:e rbrace
+                {:
+                    GType st = base;
+                    for (int k = 0; k < d; k++) { st = st.sliceOf(); }
+                    RESULT = new SliceLiteral(st, e, dleft, dright);
+                :}
 ;
 
-// Producción para ACCESO (variable o llamada a función)
 ACCESO ::= id:n lparen ARGS:a rparen  {: RESULT = new Call(n, a, nleft, nright); :}
          | id:n                        {: RESULT = new VarRef(n, nleft, nright); :}
 ;
 
-// Producciones para switch
 SWITCHSTMT ::= kwSwitch EXPRESION:e lbrace CASES:cs DEFAULTOPT:d rbrace
                 {: RESULT = new SwitchNode(e, cs, d, eleft, eright); :}
 ;
@@ -235,7 +276,6 @@ DEFAULTOPT ::= kwDefault colon CASE_BODY:b  {: RESULT = b; :}
              |                               {: RESULT = null; :}
 ;
 
-// Producciones para funciones
 FUNCDECL ::= kwFunc id:n lparen PARAMS:p rparen TIPO:t BLOQUE:b
                 {: RESULT = new FuncDecl(n, p, t, b, nleft, nright); :}
            | kwFunc id:n lparen PARAMS:p rparen BLOQUE:b

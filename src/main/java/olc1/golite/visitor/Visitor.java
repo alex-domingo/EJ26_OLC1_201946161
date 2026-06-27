@@ -18,6 +18,8 @@ public interface Visitor<T> {
 
     T visit(SliceLiteral.Context ctx);
 
+    T visit(NestedSlice.Context ctx);
+
     T visit(Paren.Context ctx);
 
     // Aritmetica
@@ -92,6 +94,8 @@ public interface Visitor<T> {
     T visit(IfNode.Context ctx);
 
     T visit(ForNode.Context ctx);
+
+    T visit(ForRange.Context ctx);
 
     T visit(SwitchNode.Context ctx);
 
