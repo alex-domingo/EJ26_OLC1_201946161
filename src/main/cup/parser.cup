@@ -54,6 +54,11 @@ terminal kwSwitch, kwCase, kwDefault, colon;
 // Terminales para funciones
 terminal kwFunc, kwReturn;
 
+// ----- NUEVOS TERMINALES -----
+terminal kwLen, kwAppend;
+terminal pkgSlices, mIndex;
+terminal pkgStrings, mJoin;
+
 // ===== No terminales =====
 nonterminal Statments INICIO, INSTRUCCIONES;
 nonterminal ASTNode INSTRUCCION;
@@ -88,6 +93,7 @@ precedence left less, lesseq, greater, greatereq;
 precedence left plus, minus;
 precedence left times, slash, percent;
 precedence right not, UMENOS;
+precedence left lbracket;   // <--- máxima prioridad para el indexado
 
 start with INICIO;
 
@@ -113,6 +119,7 @@ INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen PUNTOCOMA  {: RESULT 
               | id:n plusassign EXPRESION:e PUNTOCOMA                  {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
               | id:n minusassign EXPRESION:e PUNTOCOMA                 {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
               | id:n inc PUNTOCOMA                                     {: RESULT = new IncDec(n, '+', nleft, nright); :}
+              | id:n lbracket EXPRESION:i rbracket assign EXPRESION:e PUNTOCOMA  {: RESULT = new IndexAssign(n, i, e, nleft, nright); :}  // <--- NUEVA
               | kwBreak:b PUNTOCOMA                                    {: RESULT = new BreakNode(bleft, bright); :}
               | kwContinue:c PUNTOCOMA                                 {: RESULT = new ContinueNode(cleft, cright); :}
               | IFSTMT:s                                               {: RESULT = s; :}
@@ -121,7 +128,7 @@ INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen PUNTOCOMA  {: RESULT 
               | SWITCHSTMT:s                                           {: RESULT = s; :}
               | FUNCDECL:f                                             {: RESULT = f; :}
               | RETURNSTMT:r                                           {: RESULT = r; :}
-              | id:n lparen ARGS:a rparen PUNTOCOMA  {: RESULT = new Call(n, a, nleft, nright); :}   // <--- NUEVA ALTERNATIVA
+              | id:n lparen ARGS:a rparen PUNTOCOMA  {: RESULT = new Call(n, a, nleft, nright); :}
               | error scol                                             {: RESULT = null; :}
 ;
 
@@ -184,6 +191,11 @@ EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %p
             | EXPRESION:a and EXPRESION:b       {: RESULT = new And(a, b); :}
             | EXPRESION:a or EXPRESION:b        {: RESULT = new Or(a, b); :}
             | lparen EXPRESION:e rparen         {: RESULT = new Paren(e); :}
+            | EXPRESION:t lbracket EXPRESION:i rbracket            {: RESULT = new Index(t, i, tleft, tright); :}  // <--- NUEVO
+            | kwLen lparen EXPRESION:e rparen                      {: RESULT = new Len(e, eleft, eright); :}       // <--- NUEVO
+            | kwAppend lparen EXPRESION:s comma EXPRESION:v rparen {: RESULT = new Append(s, v, sleft, sright); :} // <--- NUEVO
+            | pkgSlices dot mIndex lparen EXPRESION:s comma EXPRESION:v rparen   {: RESULT = new SliceIndex(s, v, sleft, sright); :} // <--- NUEVO
+            | pkgStrings dot mJoin lparen EXPRESION:s comma EXPRESION:sep rparen {: RESULT = new StringsJoin(s, sep, sleft, sright); :} // <--- NUEVO
             | pkgStrconv dot mAtoi lparen EXPRESION:e rparen        {: RESULT = new Atoi(e, eleft, eright); :}
             | pkgStrconv dot mParseFloat lparen EXPRESION:e rparen  {: RESULT = new ParseFloat(e, eleft, eright); :}
             | pkgReflect dot mTypeOf lparen EXPRESION:e rparen      {: RESULT = new TypeOf(e, eleft, eright); :}
@@ -195,7 +207,7 @@ EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %p
             | decimal:e                         {: RESULT = new Decimal(Double.parseDouble(e), eleft, eright); :}
             | string:s                          {: RESULT = new StringLiteral(s, sleft, sright); :}
             | runeLit:r                         {: RESULT = new RuneLiteral(r, rleft, rright); :}
-            | SLICETYPE:t lbrace ARGS:e rbrace  {: RESULT = new SliceLiteral(t, e, tleft, tright); :}   // <--- NUEVA ALTERNATIVA
+            | SLICETYPE:t lbrace ARGS:e rbrace  {: RESULT = new SliceLiteral(t, e, tleft, tright); :}
 ;
 
 // Producción para ACCESO (variable o llamada a función)
