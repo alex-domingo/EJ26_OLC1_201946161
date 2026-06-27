@@ -28,6 +28,7 @@ import olc1.golite.reports.Token;
 import olc1.golite.visitor.interpreter.InterpreterVisitor;
 import olc1.golite.visitor.interpreter.control.BreakSignal;
 import olc1.golite.visitor.interpreter.control.ContinueSignal;
+import olc1.golite.visitor.interpreter.control.ReturnSignal;
 
 public class GoliteFrame extends JFrame {
 
@@ -84,20 +85,18 @@ public class GoliteFrame extends JFrame {
 
             Object result = parser.parse().value;
 
-            // si hubo errores lexicos o sintacticos no interpretamos
             if (!lexer.errors.isEmpty() || !parser.errors.isEmpty()) {
                 consoleTextArea.append("Se encontraron errores en el análisis. Revise el reporte de errores.\n");
                 return;
             }
 
-            // si no se construyo un AST valido evitamos el cast invalido
             if (!(result instanceof ASTNode ast)) {
                 consoleTextArea.append("No se pudo construir el AST. Revise el reporte de errores.\n");
                 return;
             }
 
             InterpreterVisitor interpreter = new InterpreterVisitor();
-            interpreter.Visit(ast);
+            interpreter.interpret(ast);
             consoleTextArea.append(interpreter.output);
         } catch (SemanticException se) {
             consoleTextArea.append(se.getError().toString() + "\n");
@@ -109,6 +108,10 @@ public class GoliteFrame extends JFrame {
             consoleTextArea.append(new GoliteError("Semantico",
                     "La sentencia continue solo puede usarse dentro de un ciclo",
                     cs.getLine(), cs.getColumn()).toString() + "\n");
+        } catch (ReturnSignal rs) {
+            consoleTextArea.append(new GoliteError("Semantico",
+                    "La sentencia return solo puede usarse dentro de una funcion",
+                    rs.getLine(), rs.getColumn()).toString() + "\n");
         } catch (Exception e) {
             consoleTextArea.append("Error: " + e.getMessage() + "\n");
         }
@@ -130,7 +133,7 @@ public class GoliteFrame extends JFrame {
 
             if (lx.errors.isEmpty() && ps.errors.isEmpty() && ast != null) {
                 try {
-                    new InterpreterVisitor().Visit(ast);
+                    new InterpreterVisitor().interpret(ast);
                 } catch (SemanticException se) {
                     all.add(se.getError());
                 } catch (BreakSignal bs) {
@@ -141,6 +144,10 @@ public class GoliteFrame extends JFrame {
                     all.add(new GoliteError("Semantico",
                             "La sentencia continue solo puede usarse dentro de un ciclo",
                             cs.getLine(), cs.getColumn()));
+                } catch (ReturnSignal rs) {   // ← nuevo catch
+                    all.add(new GoliteError("Semantico",
+                            "La sentencia return solo puede usarse dentro de una funcion",
+                            rs.getLine(), rs.getColumn()));
                 } catch (Exception e) {
                     // otros errores de ejecucion no se listan en el reporte
                 }

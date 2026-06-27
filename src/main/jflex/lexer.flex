@@ -110,6 +110,8 @@ rune_escape = \\ [\'\\nrt]
 "switch"   { return tok(sym.kwSwitch,   "reservada"); }
 "case"     { return tok(sym.kwCase,     "reservada"); }
 "default"  { return tok(sym.kwDefault,  "reservada"); }
+"func"     { return tok(sym.kwFunc,     "reservada"); }
+"return"   { return tok(sym.kwReturn,   "reservada"); }
 
 // Funciones embebidas: paquete y metodo
 "fmt"        { return tok(sym.pkgFmt,      "paquete"); }
