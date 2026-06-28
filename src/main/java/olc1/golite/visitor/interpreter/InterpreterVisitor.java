@@ -3,6 +3,7 @@ package olc1.golite.visitor.interpreter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,6 +15,7 @@ import olc1.golite.reports.GoliteError;
 import olc1.golite.reports.SemanticException;
 import olc1.golite.symbols.Environment;
 import olc1.golite.symbols.GType;
+import olc1.golite.symbols.StructDef;
 import olc1.golite.symbols.SymbolEntry;
 import olc1.golite.visitor.Visitor;
 import olc1.golite.visitor.interpreter.control.BreakSignal;
@@ -32,6 +34,8 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     private Environment currentEnv = globalEnv;
     // tabla de funciones declaradas en el ambito global
     private final Map<String, FuncDecl> functions = new HashMap<>();
+    // tabla de structs declarados en el ambito global
+    private final Map<String, StructDef> structs = new HashMap<>();
 
     public ValueWrapper Visit(ASTNode node) {
         return node.accept(this);
@@ -47,6 +51,13 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
             top.add(root);
         }
 
+        // Pasada 0: registramos los structs (una funcion puede usarlos como tipo)
+        for (ASTNode node : top) {
+            if (node instanceof StructDecl sd) {
+                registerStruct(sd);
+            }
+        }
+
         // Pasada 1: registramos (hoisting) todas las funciones, asi se puede
         // llamar a una funcion declarada mas abajo en el archivo
         for (ASTNode node : top) {
@@ -56,9 +67,9 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         }
 
         // Pasada 2: ejecutamos las sentencias del nivel global (variables globales
-        // y sentencias sueltas), saltando las declaraciones de funcion
+        // y sentencias sueltas), saltando las declaraciones de funcion y de struct
         for (ASTNode node : top) {
-            if (!(node instanceof FuncDecl)) {
+            if (!(node instanceof FuncDecl) && !(node instanceof StructDecl)) {
                 Visit(node);
             }
         }
@@ -83,6 +94,26 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
             }
         }
         functions.put(fd.getName(), fd);
+    }
+
+    private void registerStruct(StructDecl sd) {
+        if (structs.containsKey(sd.getName())) {
+            throw semantic("El struct '" + sd.getName() + "' ya fue declarado", sd.getLine(), sd.getColumn());
+        }
+        if (sd.getFields().isEmpty()) {
+            throw semantic("El struct '" + sd.getName() + "' debe tener al menos un atributo", sd.getLine(), sd.getColumn());
+        }
+        // los atributos no pueden repetir nombre
+        List<StructDef.Field> fields = new ArrayList<>();
+        Set<String> vistos = new HashSet<>();
+        for (StructDecl.FieldDecl fd : sd.getFields()) {
+            if (!vistos.add(fd.name)) {
+                throw semantic("El atributo '" + fd.name + "' esta repetido en el struct '" + sd.getName() + "'",
+                        fd.line, fd.column);
+            }
+            fields.add(new StructDef.Field(fd.name, fd.type, fd.line, fd.column));
+        }
+        structs.put(sd.getName(), new StructDef(sd.getName(), fields, sd.getLine(), sd.getColumn()));
     }
 
     // ejecuta una funcion: crea su ambito, vincula parametros, corre el cuerpo y maneja el return
@@ -165,6 +196,8 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
                 GType.VOID;
             case SliceValue x ->
                 x.getType();
+            case StructValue x ->
+                GType.struct(x.getStructName());
         };
     }
 
@@ -180,9 +213,12 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     }
 
     private ValueWrapper defaultValue(GType type, int line, int column) {
-        // un slice sin inicializar arranca vacio (en vez de nil, por simplicidad)
         if (type.isSlice()) {
             return new SliceValue(new ArrayList<>(), type, line, column);
+        }
+        if (type.isStruct()) {
+            // por simplicidad no soportamos structs sin inicializar (nil fuera de alcance)
+            throw semantic("Un struct debe inicializarse con un valor: " + type.getLabel(), line, column);
         }
         return switch (type.getBase()) {
             case INT ->
@@ -429,6 +465,71 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
             }
         }
         return new SliceValue(valores, sliceType, line, column);
+    }
+
+    // ===== Structs =====
+    @Override
+    public ValueWrapper visit(StructDecl.Context ctx) {
+        // los structs se registran en la pasada 0; aqui no hay nada que ejecutar.
+        // si llegamos aqui es porque se declaro fuera del ambito global.
+        throw semantic("Los structs solo pueden declararse en el ambito global", ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(StructLiteral.Context ctx) {
+        StructDef def = structs.get(ctx.structName);
+        if (def == null) {
+            throw semantic("El struct '" + ctx.structName + "' no fue definido", ctx.line, ctx.column);
+        }
+
+        // arrancamos con los valores por defecto de cada campo, en orden de declaracion
+        Map<String, ValueWrapper> valores = new LinkedHashMap<>();
+        for (StructDef.Field f : def.getFields()) {
+            valores.put(f.name, defaultValue(f.type, ctx.line, ctx.column));
+        }
+
+        // aplicamos los inicializadores { campo: valor }
+        for (StructLiteral.FieldInit init : ctx.inits) {
+            StructDef.Field f = def.getField(init.name);
+            if (f == null) {
+                throw semantic("El struct '" + ctx.structName + "' no tiene un atributo llamado '" + init.name + "'",
+                        init.line, init.column);
+            }
+            ValueWrapper v = checkAndConvert(f.type, Visit(init.value), init.line, init.column);
+            valores.put(f.name, v);
+        }
+
+        return new StructValue(ctx.structName, valores, ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(FieldAccess.Context ctx) {
+        ValueWrapper target = Visit(ctx.target);
+        if (!(target instanceof StructValue sv)) {
+            throw semantic("Solo se puede acceder a atributos de un struct", ctx.line, ctx.column);
+        }
+        if (!sv.getFields().containsKey(ctx.field)) {
+            throw semantic("El struct '" + sv.getStructName() + "' no tiene un atributo llamado '" + ctx.field + "'",
+                    ctx.line, ctx.column);
+        }
+        return sv.getFields().get(ctx.field);
+    }
+
+    @Override
+    public ValueWrapper visit(FieldAssign.Context ctx) {
+        ValueWrapper target = Visit(ctx.target);
+        if (!(target instanceof StructValue sv)) {
+            throw semantic("Solo se puede modificar atributos de un struct", ctx.line, ctx.column);
+        }
+        StructDef def = structs.get(sv.getStructName());
+        StructDef.Field f = (def != null) ? def.getField(ctx.field) : null;
+        if (f == null) {
+            throw semantic("El struct '" + sv.getStructName() + "' no tiene un atributo llamado '" + ctx.field + "'",
+                    ctx.line, ctx.column);
+        }
+        ValueWrapper nuevo = checkAndConvert(f.type, Visit(ctx.value), ctx.line, ctx.column);
+        sv.getFields().put(ctx.field, nuevo); // muta el Map compartido (por referencia)
+        return defaultVoid;
     }
 
     // ===== Aritmetica =====

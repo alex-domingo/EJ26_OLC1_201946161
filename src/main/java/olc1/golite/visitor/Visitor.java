@@ -20,6 +20,8 @@ public interface Visitor<T> {
 
     T visit(NestedSlice.Context ctx);
 
+    T visit(StructLiteral.Context ctx);
+
     T visit(Paren.Context ctx);
 
     // Aritmetica
@@ -64,6 +66,8 @@ public interface Visitor<T> {
 
     T visit(Index.Context ctx);
 
+    T visit(FieldAccess.Context ctx);
+
     T visit(Len.Context ctx);
 
     T visit(Append.Context ctx);
@@ -83,6 +87,8 @@ public interface Visitor<T> {
     T visit(Assign.Context ctx);
 
     T visit(IndexAssign.Context ctx);
+
+    T visit(FieldAssign.Context ctx);
 
     T visit(CompoundAssign.Context ctx);
 
@@ -108,6 +114,8 @@ public interface Visitor<T> {
     T visit(ReturnNode.Context ctx);
 
     T visit(FuncDecl.Context ctx);
+
+    T visit(StructDecl.Context ctx);
 
     T visit(Statments.Context ctx);
 }

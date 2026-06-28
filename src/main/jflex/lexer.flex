@@ -115,6 +115,7 @@ rune_escape = \\ [\'\\nrt]
 "default"  { return tok(sym.kwDefault,  "reservada"); }
 "func"     { return tok(sym.kwFunc,     "reservada"); }
 "return"   { return tok(sym.kwReturn,   "reservada"); }
+"struct"   { return tok(sym.kwStruct,   "reservada"); }
 
 // ----- PALABRAS RESERVADAS (funciones globales) -----
 "len"      { return tok(sym.kwLen,    "reservada"); }

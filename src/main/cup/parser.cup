@@ -1,6 +1,5 @@
 package olc1.golite;
 
-// importaciones necesarias
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,15 +52,16 @@ terminal kwLen, kwAppend;
 terminal pkgSlices, mIndex;
 terminal pkgStrings, mJoin;
 terminal kwRange;
+terminal kwStruct;
 
 // ===== No terminales =====
 nonterminal Statments INICIO, INSTRUCCIONES;
 nonterminal ASTNode INSTRUCCION;
 nonterminal ASTNode EXPRESION;
-nonterminal ASTNode EXPRSTMT;            // sentencia de expresion (llamada o asignacion indexada)
+nonterminal ASTNode EXPRSTMT;
 nonterminal GType TIPO;
 nonterminal GType SLICETYPE;
-nonterminal ASTNode BLOQUE, IFSTMT, FORSTMT, FOR_SIMPLE;
+nonterminal ASTNode BLOQUE, IFSTMT, FORSTMT, FOR_SIMPLE, FOR_SIMPLE_POST;
 nonterminal List<ASTNode> ARGS, LISTA_EXPR;
 nonterminal PUNTOCOMA;
 
@@ -83,7 +83,15 @@ nonterminal GType TIPO_BASE;
 
 nonterminal List<ASTNode> SLICE_ELEMS;
 nonterminal ASTNode SLICE_ELEM;
-nonterminal List<ASTNode> SLICE_ELEM_LIST;   // <--- NUEVO
+nonterminal List<ASTNode> SLICE_ELEM_LIST;
+
+nonterminal ASTNode STRUCTDECL;
+nonterminal List<StructDecl.FieldDecl> FIELD_DECLS;
+nonterminal List<StructLiteral.FieldInit> FIELD_INITS, FIELD_INIT_LIST;
+nonterminal StructLiteral.FieldInit FIELD_INIT;
+
+// Expresion "block-safe": sin struct-literal en el tope (para cabeceras de control)
+nonterminal ASTNode BEXPR, BACCESO;
 
 // ===== Precedencia (de menor a mayor) =====
 precedence left or;
@@ -127,45 +135,50 @@ INSTRUCCION ::= pkgFmt:f dot mPrintln lparen ARGS:a rparen PUNTOCOMA  {: RESULT 
               | SWITCHSTMT:s                                           {: RESULT = s; :}
               | FUNCDECL:f                                             {: RESULT = f; :}
               | RETURNSTMT:r                                           {: RESULT = r; :}
+              | STRUCTDECL:s                                           {: RESULT = s; :}
               | error scol                                             {: RESULT = null; :}
 ;
 
-// Sentencia de expresion: se reconoce la EXPRESION completa primero, y el
-// PUNTOCOMA se aplica una sola vez afuera (en INSTRUCCION). Esto elimina el
-// reduce/reduce entre cerrar la sentencia y continuar la expresion.
 EXPRSTMT ::= EXPRESION:e
-                {:
-                    // Una expresion suelta como sentencia solo es valida si es una
-                    // llamada a funcion o una asignacion indexada (las cubre abajo).
-                    // Aqui aceptamos llamada como sentencia.
-                    RESULT = e;
-                :}
+                {: RESULT = e; :}
            | EXPRESION:t lbracket EXPRESION:i rbracket assign EXPRESION:v
                 {: RESULT = new IndexAssign(t, i, v, tleft, tright); :}
+           | ACCESO:t dot id:f assign EXPRESION:v
+                {: RESULT = new FieldAssign(t, f, v, tleft, tright); :}
 ;
 
 BLOQUE ::= lbrace INSTRUCCIONES:is rbrace  {: RESULT = new Bloque(is); :}
-         | lbrace rbrace                    {: RESULT = new Bloque(null); :}
+         | lbrace rbrace                   {: RESULT = new Bloque(null); :}
 ;
 
-IFSTMT ::= kwIf EXPRESION:c BLOQUE:b                  {: RESULT = new IfNode(c, b, null); :}
-         | kwIf EXPRESION:c BLOQUE:b kwElse BLOQUE:e  {: RESULT = new IfNode(c, b, e); :}
-         | kwIf EXPRESION:c BLOQUE:b kwElse IFSTMT:e  {: RESULT = new IfNode(c, b, e); :}
+// Las cabeceras de control usan BEXPR (sin struct-literal suelto)
+IFSTMT ::= kwIf BEXPR:c BLOQUE:b                  {: RESULT = new IfNode(c, b, null); :}
+         | kwIf BEXPR:c BLOQUE:b kwElse BLOQUE:e  {: RESULT = new IfNode(c, b, e); :}
+         | kwIf BEXPR:c BLOQUE:b kwElse IFSTMT:e  {: RESULT = new IfNode(c, b, e); :}
 ;
 
-FORSTMT ::= kwFor EXPRESION:c BLOQUE:b
+FORSTMT ::= kwFor BEXPR:c BLOQUE:b
                 {: RESULT = new ForNode(null, c, null, b); :}
-          | kwFor FOR_SIMPLE:i scol EXPRESION:c scol FOR_SIMPLE:p BLOQUE:b
+          | kwFor FOR_SIMPLE:i scol EXPRESION:c scol FOR_SIMPLE_POST:p BLOQUE:b
                 {: RESULT = new ForNode(i, c, p, b); :}
-          | kwFor id:n1 comma id:n2 dassign kwRange EXPRESION:s BLOQUE:b
+          | kwFor id:n1 comma id:n2 dassign kwRange BEXPR:s BLOQUE:b
                 {: RESULT = new ForRange(n1, n2, s, b, n1left, n1right); :}
 ;
 
+// init del for clasico (va seguido de ';', sin ambiguedad)
 FOR_SIMPLE ::= id:n dassign EXPRESION:e     {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
              | id:n assign EXPRESION:e       {: RESULT = new Assign(n, e, nleft, nright); :}
              | id:n plusassign EXPRESION:e   {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
              | id:n minusassign EXPRESION:e  {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
              | id:n inc                       {: RESULT = new IncDec(n, '+', nleft, nright); :}
+;
+
+// post del for clasico (va seguido de '{', usa BEXPR para no chocar con el bloque)
+FOR_SIMPLE_POST ::= id:n dassign BEXPR:e     {: RESULT = new VarDecl(n, null, e, nleft, nright); :}
+                  | id:n assign BEXPR:e       {: RESULT = new Assign(n, e, nleft, nright); :}
+                  | id:n plusassign BEXPR:e   {: RESULT = new CompoundAssign(n, '+', e, nleft, nright); :}
+                  | id:n minusassign BEXPR:e  {: RESULT = new CompoundAssign(n, '-', e, nleft, nright); :}
+                  | id:n inc                   {: RESULT = new IncDec(n, '+', nleft, nright); :}
 ;
 
 ARGS ::= LISTA_EXPR:l  {: RESULT = l; :}
@@ -198,10 +211,9 @@ DIMS ::= lbracket rbracket DIMS:d  {: RESULT = d + 1; :}
        | lbracket rbracket          {: RESULT = 1; :}
 ;
 
-// ---------- SLICE_ELEMS y SLICE_ELEM ----------
 SLICE_ELEMS ::= SLICE_ELEM_LIST:l         {: RESULT = l; :}
               | SLICE_ELEM_LIST:l comma    {: RESULT = l; :}
-              |                             {: RESULT = new ArrayList<>(); :}
+              |                            {: RESULT = new ArrayList<>(); :}
 ;
 
 SLICE_ELEM_LIST ::= SLICE_ELEM_LIST:l comma SLICE_ELEM:e  {: l.add(e); RESULT = l; :}
@@ -212,7 +224,7 @@ SLICE_ELEM ::= EXPRESION:e                  {: RESULT = e; :}
              | lbrace SLICE_ELEMS:l rbrace  {: RESULT = new NestedSlice(l, lleft, lright); :}
 ;
 
-// ---------- EXPRESION ----------
+// ===== EXPRESION (completa, con struct-literal) =====
 EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %prec UMENOS
             | not EXPRESION:a                   {: RESULT = new Not(a); :}
             | EXPRESION:a plus EXPRESION:b      {: RESULT = new Add(a, b); :}
@@ -253,11 +265,81 @@ EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %p
                 :}
 ;
 
-ACCESO ::= id:n lparen ARGS:a rparen  {: RESULT = new Call(n, a, nleft, nright); :}
-         | id:n                        {: RESULT = new VarRef(n, nleft, nright); :}
+ACCESO ::= id:n lparen ARGS:a rparen   {: RESULT = new Call(n, a, nleft, nright); :}
+         | id:n lbrace FIELD_INITS:fi rbrace  {: RESULT = new StructLiteral(n, fi, nleft, nright); :}
+         | ACCESO:t dot id:f            {: RESULT = new FieldAccess(t, f, tleft, tright); :}
+         | id:n                          {: RESULT = new VarRef(n, nleft, nright); :}
 ;
 
-SWITCHSTMT ::= kwSwitch EXPRESION:e lbrace CASES:cs DEFAULTOPT:d rbrace
+// ===== BEXPR (igual a EXPRESION pero SIN struct-literal en el tope) =====
+// un struct-literal en una cabecera de control debe ir entre parentesis.
+BEXPR ::= minus BEXPR:a                 {: RESULT = new Negate(a); :} %prec UMENOS
+        | not BEXPR:a                   {: RESULT = new Not(a); :}
+        | BEXPR:a plus BEXPR:b          {: RESULT = new Add(a, b); :}
+        | BEXPR:a minus BEXPR:b         {: RESULT = new Sub(a, b); :}
+        | BEXPR:a times BEXPR:b         {: RESULT = new Mul(a, b); :}
+        | BEXPR:a slash BEXPR:b         {: RESULT = new Div(a, b); :}
+        | BEXPR:a percent BEXPR:b       {: RESULT = new Mod(a, b); :}
+        | BEXPR:a equal BEXPR:b         {: RESULT = new Equal(a, b); :}
+        | BEXPR:a nequal BEXPR:b        {: RESULT = new NotEqual(a, b); :}
+        | BEXPR:a less BEXPR:b          {: RESULT = new Less(a, b); :}
+        | BEXPR:a lesseq BEXPR:b        {: RESULT = new LessEqual(a, b); :}
+        | BEXPR:a greater BEXPR:b       {: RESULT = new Greater(a, b); :}
+        | BEXPR:a greatereq BEXPR:b     {: RESULT = new GreaterEqual(a, b); :}
+        | BEXPR:a and BEXPR:b           {: RESULT = new And(a, b); :}
+        | BEXPR:a or BEXPR:b            {: RESULT = new Or(a, b); :}
+        | lparen EXPRESION:e rparen     {: RESULT = new Paren(e); :}
+        | BEXPR:t lbracket EXPRESION:i rbracket            {: RESULT = new Index(t, i, tleft, tright); :}
+        | kwLen lparen EXPRESION:e rparen                      {: RESULT = new Len(e, eleft, eright); :}
+        | kwAppend lparen EXPRESION:s comma EXPRESION:v rparen {: RESULT = new Append(s, v, sleft, sright); :}
+        | pkgSlices dot mIndex lparen EXPRESION:s comma EXPRESION:v rparen   {: RESULT = new SliceIndex(s, v, sleft, sright); :}
+        | pkgStrings dot mJoin lparen EXPRESION:s comma EXPRESION:sep rparen {: RESULT = new StringsJoin(s, sep, sleft, sright); :}
+        | pkgStrconv dot mAtoi lparen EXPRESION:e rparen        {: RESULT = new Atoi(e, eleft, eright); :}
+        | pkgStrconv dot mParseFloat lparen EXPRESION:e rparen  {: RESULT = new ParseFloat(e, eleft, eright); :}
+        | pkgReflect dot mTypeOf lparen EXPRESION:e rparen dot tipoString  {: RESULT = new TypeOf(e, eleft, eright); :}
+        | pkgReflect dot mTypeOf lparen EXPRESION:e rparen      {: RESULT = new TypeOf(e, eleft, eright); :}
+        | BACCESO:a                     {: RESULT = a; :}
+        | kwTrue:t                      {: RESULT = new BoolLiteral(true, tleft, tright); :}
+        | kwFalse:f                     {: RESULT = new BoolLiteral(false, fleft, fright); :}
+        | integer:e                     {: RESULT = new Integers(Integer.parseInt(e), eleft, eright); :}
+        | decimal:e                     {: RESULT = new Decimal(Double.parseDouble(e), eleft, eright); :}
+        | string:s                      {: RESULT = new StringLiteral(s, sleft, sright); :}
+        | runeLit:r                     {: RESULT = new RuneLiteral(r, rleft, rright); :}
+        | DIMS:d TIPO_BASE:base lbrace SLICE_ELEMS:e rbrace
+            {:
+                GType st = base;
+                for (int k = 0; k < d; k++) { st = st.sliceOf(); }
+                RESULT = new SliceLiteral(st, e, dleft, dright);
+            :}
+;
+
+// ACCESO sin struct-literal (para BEXPR)
+BACCESO ::= id:n lparen ARGS:a rparen   {: RESULT = new Call(n, a, nleft, nright); :}
+          | BACCESO:t dot id:f          {: RESULT = new FieldAccess(t, f, tleft, tright); :}
+          | id:n                         {: RESULT = new VarRef(n, nleft, nright); :}
+;
+
+STRUCTDECL ::= kwStruct id:n lbrace FIELD_DECLS:fs rbrace
+                {: RESULT = new StructDecl(n, fs, nleft, nright); :}
+;
+
+FIELD_DECLS ::= FIELD_DECLS:l TIPO:t id:n scol  {: l.add(new StructDecl.FieldDecl(n, t, nleft, nright)); RESULT = l; :}
+              | TIPO:t id:n scol                 {: List<StructDecl.FieldDecl> nl = new ArrayList<>(); nl.add(new StructDecl.FieldDecl(n, t, nleft, nright)); RESULT = nl; :}
+;
+
+FIELD_INITS ::= FIELD_INIT_LIST:l       {: RESULT = l; :}
+              | FIELD_INIT_LIST:l comma  {: RESULT = l; :}
+              |                          {: RESULT = new ArrayList<>(); :}
+;
+
+FIELD_INIT_LIST ::= FIELD_INIT_LIST:l comma FIELD_INIT:e  {: l.add(e); RESULT = l; :}
+                  | FIELD_INIT:e                           {: List<StructLiteral.FieldInit> nl = new ArrayList<>(); nl.add(e); RESULT = nl; :}
+;
+
+FIELD_INIT ::= id:n colon EXPRESION:v  {: RESULT = new StructLiteral.FieldInit(n, v, nleft, nright); :}
+;
+
+SWITCHSTMT ::= kwSwitch BEXPR:e lbrace CASES:cs DEFAULTOPT:d rbrace
                 {: RESULT = new SwitchNode(e, cs, d, eleft, eright); :}
 ;
 
