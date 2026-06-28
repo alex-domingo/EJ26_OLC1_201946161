@@ -79,6 +79,8 @@ public interface Visitor<T> {
     // Llamada a funcion
     T visit(Call.Context ctx);
 
+    T visit(MethodCall.Context ctx);
+
     // Variables
     T visit(VarRef.Context ctx);
 
@@ -114,6 +116,8 @@ public interface Visitor<T> {
     T visit(ReturnNode.Context ctx);
 
     T visit(FuncDecl.Context ctx);
+
+    T visit(MethodDecl.Context ctx);
 
     T visit(StructDecl.Context ctx);
 

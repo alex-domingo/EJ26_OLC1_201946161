@@ -85,7 +85,7 @@
                 </executions>
                 <configuration>
                     <outputDirectory>${project.build.directory}/generated-sources/cup</outputDirectory>
-                    <expectedConflicts>35</expectedConflicts>
+                    <expectedConflicts>50</expectedConflicts>
                 </configuration>
             </plugin>
 

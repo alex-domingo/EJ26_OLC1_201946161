@@ -195,6 +195,7 @@ TIPO ::= tipoInt     {: RESULT = GType.INT; :}
        | tipoBool    {: RESULT = GType.BOOL; :}
        | tipoRune    {: RESULT = GType.RUNE; :}
        | SLICETYPE:s {: RESULT = s; :}
+       | id:n        {: RESULT = GType.struct(n); :}
 ;
 
 SLICETYPE ::= lbracket rbracket TIPO:t  {: RESULT = t.sliceOf(); :}
@@ -267,6 +268,7 @@ EXPRESION ::= minus EXPRESION:a                 {: RESULT = new Negate(a); :} %p
 
 ACCESO ::= id:n lparen ARGS:a rparen   {: RESULT = new Call(n, a, nleft, nright); :}
          | id:n lbrace FIELD_INITS:fi rbrace  {: RESULT = new StructLiteral(n, fi, nleft, nright); :}
+         | ACCESO:t dot id:m lparen ARGS:a rparen  {: RESULT = new MethodCall(t, m, a, tleft, tright); :}
          | ACCESO:t dot id:f            {: RESULT = new FieldAccess(t, f, tleft, tright); :}
          | id:n                          {: RESULT = new VarRef(n, nleft, nright); :}
 ;
@@ -315,6 +317,7 @@ BEXPR ::= minus BEXPR:a                 {: RESULT = new Negate(a); :} %prec UMEN
 
 // ACCESO sin struct-literal (para BEXPR)
 BACCESO ::= id:n lparen ARGS:a rparen   {: RESULT = new Call(n, a, nleft, nright); :}
+          | BACCESO:t dot id:m lparen ARGS:a rparen  {: RESULT = new MethodCall(t, m, a, tleft, tright); :}
           | BACCESO:t dot id:f          {: RESULT = new FieldAccess(t, f, tleft, tright); :}
           | id:n                         {: RESULT = new VarRef(n, nleft, nright); :}
 ;
@@ -362,6 +365,10 @@ FUNCDECL ::= kwFunc id:n lparen PARAMS:p rparen TIPO:t BLOQUE:b
                 {: RESULT = new FuncDecl(n, p, t, b, nleft, nright); :}
            | kwFunc id:n lparen PARAMS:p rparen BLOQUE:b
                 {: RESULT = new FuncDecl(n, p, null, b, nleft, nright); :}
+           | kwFunc lparen id:r id:s rparen id:n lparen PARAMS:p rparen TIPO:t BLOQUE:b
+                {: RESULT = new MethodDecl(r, s, n, p, t, b, rleft, rright); :}
+           | kwFunc lparen id:r id:s rparen id:n lparen PARAMS:p rparen BLOQUE:b
+                {: RESULT = new MethodDecl(r, s, n, p, null, b, rleft, rright); :}
 ;
 
 PARAMS ::= LISTA_PARAMS:l  {: RESULT = l; :}

@@ -34,6 +34,8 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
     private Environment currentEnv = globalEnv;
     // tabla de funciones declaradas en el ambito global
     private final Map<String, FuncDecl> functions = new HashMap<>();
+    // tabla de metodos, con clave "NombreStruct.nombreMetodo"
+    private final Map<String, MethodDecl> methods = new HashMap<>();
     // tabla de structs declarados en el ambito global
     private final Map<String, StructDef> structs = new HashMap<>();
 
@@ -58,18 +60,19 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
             }
         }
 
-        // Pasada 1: registramos (hoisting) todas las funciones, asi se puede
-        // llamar a una funcion declarada mas abajo en el archivo
+        // Pasada 1: registramos funciones y metodos (hoisting)
         for (ASTNode node : top) {
             if (node instanceof FuncDecl fd) {
                 registerFunction(fd);
+            } else if (node instanceof MethodDecl md) {
+                registerMethod(md);
             }
         }
 
         // Pasada 2: ejecutamos las sentencias del nivel global (variables globales
-        // y sentencias sueltas), saltando las declaraciones de funcion y de struct
+        // y sentencias sueltas), saltando las declaraciones de funcion, struct y metodo
         for (ASTNode node : top) {
-            if (!(node instanceof FuncDecl) && !(node instanceof StructDecl)) {
+            if (!(node instanceof FuncDecl) && !(node instanceof StructDecl) && !(node instanceof MethodDecl)) {
                 Visit(node);
             }
         }
@@ -94,6 +97,28 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
             }
         }
         functions.put(fd.getName(), fd);
+    }
+
+    private void registerMethod(MethodDecl md) {
+        // el struct del receptor debe existir
+        if (!structs.containsKey(md.getReceiverStruct())) {
+            throw semantic("El struct '" + md.getReceiverStruct() + "' del receptor no fue definido",
+                    md.getLine(), md.getColumn());
+        }
+        String key = md.getReceiverStruct() + "." + md.getName();
+        if (methods.containsKey(key)) {
+            throw semantic("El metodo '" + md.getName() + "' ya fue declarado para el struct '"
+                    + md.getReceiverStruct() + "'", md.getLine(), md.getColumn());
+        }
+        // los parametros no pueden repetir nombre
+        Set<String> vistos = new HashSet<>();
+        for (Param p : md.getParams()) {
+            if (!vistos.add(p.name)) {
+                throw semantic("El parametro '" + p.name + "' esta repetido en el metodo '" + md.getName() + "'",
+                        p.line, p.column);
+            }
+        }
+        methods.put(key, md);
     }
 
     private void registerStruct(StructDecl sd) {
@@ -166,6 +191,64 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         if (!returned && fn.getReturnType() != null) {
             throw semantic("La funcion '" + name + "' debe retornar un valor de tipo " + fn.getReturnType().getLabel(),
                     line, column);
+        }
+        return result;
+    }
+
+    // ejecuta un metodo sobre una instancia de struct (receptor por referencia)
+    private ValueWrapper callMethod(StructValue instance, String methodName,
+            List<ValueWrapper> argValues, int line, int column) {
+        String key = instance.getStructName() + "." + methodName;
+        MethodDecl m = methods.get(key);
+        if (m == null) {
+            throw semantic("El struct '" + instance.getStructName() + "' no tiene un metodo llamado '"
+                    + methodName + "'", line, column);
+        }
+        if (argValues.size() != m.getParams().size()) {
+            throw semantic("El metodo '" + methodName + "' esperaba " + m.getParams().size()
+                    + " argumento(s) pero recibio " + argValues.size(), line, column);
+        }
+
+        // el ambito del metodo cuelga del GLOBAL
+        Environment mEnv = new Environment(globalEnv);
+        // el receptor se vincula POR REFERENCIA: es la misma instancia (mismo Map)
+        mEnv.declare(new SymbolEntry(m.getReceiverName(), GType.struct(instance.getStructName()),
+                instance, m.getLine(), m.getColumn()));
+        for (int i = 0; i < m.getParams().size(); i++) {
+            Param p = m.getParams().get(i);
+            ValueWrapper arg = checkAndConvert(p.type, argValues.get(i), p.line, p.column);
+            mEnv.declare(new SymbolEntry(p.name, p.type, arg, p.line, p.column));
+        }
+
+        Environment prev = currentEnv;
+        currentEnv = mEnv;
+        boolean returned = false;
+        ValueWrapper result = defaultVoid;
+        try {
+            if (m.getBody() != null) {
+                Visit(m.getBody());
+            }
+        } catch (ReturnSignal rs) {
+            returned = true;
+            if (m.getReturnType() == null) {
+                if (rs.hasValue()) {
+                    throw semantic("El metodo '" + methodName + "' no declara tipo de retorno y no puede retornar un valor",
+                            rs.getLine(), rs.getColumn());
+                }
+            } else {
+                if (!rs.hasValue()) {
+                    throw semantic("El metodo '" + methodName + "' debe retornar un valor de tipo "
+                            + m.getReturnType().getLabel(), rs.getLine(), rs.getColumn());
+                }
+                result = checkAndConvert(m.getReturnType(), rs.getValue(), rs.getLine(), rs.getColumn());
+            }
+        } finally {
+            currentEnv = prev;
+        }
+
+        if (!returned && m.getReturnType() != null) {
+            throw semantic("El metodo '" + methodName + "' debe retornar un valor de tipo "
+                    + m.getReturnType().getLabel(), line, column);
         }
         return result;
     }
@@ -530,6 +613,27 @@ public class InterpreterVisitor implements Visitor<ValueWrapper> {
         ValueWrapper nuevo = checkAndConvert(f.type, Visit(ctx.value), ctx.line, ctx.column);
         sv.getFields().put(ctx.field, nuevo); // muta el Map compartido (por referencia)
         return defaultVoid;
+    }
+
+    // ===== Metodos =====
+    @Override
+    public ValueWrapper visit(MethodCall.Context ctx) {
+        ValueWrapper target = Visit(ctx.target);
+        if (!(target instanceof StructValue sv)) {
+            throw semantic("Solo se puede invocar metodos sobre un struct", ctx.line, ctx.column);
+        }
+        // los argumentos se evaluan en el ambito del llamador
+        List<ValueWrapper> args = new ArrayList<>();
+        for (ASTNode a : ctx.args) {
+            args.add(Visit(a));
+        }
+        return callMethod(sv, ctx.name, args, ctx.line, ctx.column);
+    }
+
+    @Override
+    public ValueWrapper visit(MethodDecl.Context ctx) {
+        // si llegamos aqui ejecutando, el metodo esta anidado (no en el global)
+        throw semantic("Los metodos solo pueden declararse en el ambito global", ctx.line, ctx.column);
     }
 
     // ===== Aritmetica =====
